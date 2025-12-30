@@ -102,6 +102,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Left pane: 1/3 of width
 			// Content width = total - border(2) - padding(2) = total - 4
 			paneWidth := (msg.Width / 3) - 4
+			// Right pane: calculate as remainder to avoid rounding issues
+			// Total left pane rendered width = paneWidth + 4 (borders + padding)
+			leftPaneTotal := paneWidth + 4
+			rightPaneWidth := msg.Width - leftPaneTotal - 4
 			// Height: total - header(1) - footer(1) - pane borders(2) = total - 4
 			paneHeight := msg.Height - headerHeight - footerHeight - 2
 
@@ -110,7 +114,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.leftPane.SetContent(lipgloss.NewStyle().Width(paneWidth).Render(loremIpsum))
 
 			// Initialize right pane
-			rightPaneWidth := (msg.Width * 2 / 3) - 4
 			m.rightPane = viewport.New(rightPaneWidth, paneHeight)
 			m.rightPane.SetContent(lipgloss.NewStyle().Width(rightPaneWidth).Render(loremIpsum))
 
@@ -118,7 +121,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// Update pane dimensions on resize
 			paneWidth := (msg.Width / 3) - 4
-			rightPaneWidth := (msg.Width * 2 / 3) - 4
+			leftPaneTotal := paneWidth + 4
+			rightPaneWidth := msg.Width - leftPaneTotal - 4
 			paneHeight := msg.Height - headerHeight - footerHeight - 2
 
 			m.leftPane.Width = paneWidth
