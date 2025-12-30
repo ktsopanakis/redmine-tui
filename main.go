@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -77,8 +78,8 @@ type model struct {
 
 func initialModel() model {
 	return model{
-		leftTitle:  "Left Pane",
-		rightTitle: "Right Pane",
+		leftTitle:  "Le",
+		rightTitle: "Right Pane long",
 		activePane: 0,
 	}
 }
@@ -98,9 +99,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !m.ready {
 			// Calculate pane dimensions
-			// Total width per pane = width/2
+			// Left pane: 1/3 of width
 			// Content width = total - border(2) - padding(2) = total - 4
-			paneWidth := (msg.Width / 2) - 4
+			paneWidth := (msg.Width / 3) - 4
 			// Height: total - header(1) - footer(1) - pane borders(2) = total - 4
 			paneHeight := msg.Height - headerHeight - footerHeight - 2
 
@@ -109,21 +110,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.leftPane.SetContent(lipgloss.NewStyle().Width(paneWidth).Render(loremIpsum))
 
 			// Initialize right pane
-			m.rightPane = viewport.New(paneWidth, paneHeight)
-			m.rightPane.SetContent(lipgloss.NewStyle().Width(paneWidth).Render(loremIpsum))
+			rightPaneWidth := (msg.Width * 2 / 3) - 4
+			m.rightPane = viewport.New(rightPaneWidth, paneHeight)
+			m.rightPane.SetContent(lipgloss.NewStyle().Width(rightPaneWidth).Render(loremIpsum))
 
 			m.ready = true
 		} else {
 			// Update pane dimensions on resize
-			paneWidth := (msg.Width / 2) - 4
+			paneWidth := (msg.Width / 3) - 4
+			rightPaneWidth := (msg.Width * 2 / 3) - 4
 			paneHeight := msg.Height - headerHeight - footerHeight - 2
 
 			m.leftPane.Width = paneWidth
 			m.leftPane.Height = paneHeight
 			m.leftPane.SetContent(lipgloss.NewStyle().Width(paneWidth).Render(loremIpsum))
-			m.rightPane.Width = paneWidth
+			m.rightPane.Width = rightPaneWidth
 			m.rightPane.Height = paneHeight
-			m.rightPane.SetContent(lipgloss.NewStyle().Width(paneWidth).Render(loremIpsum))
+			m.rightPane.SetContent(lipgloss.NewStyle().Width(rightPaneWidth).Render(loremIpsum))
 		}
 
 	case tea.KeyMsg:
@@ -175,8 +178,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		// Handle click to switch panes
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
-			// Determine which pane was clicked based on X position
-			if msg.X < m.width/2 {
+			// Determine which pane was clicked based on X position (1/3 split)
+			if msg.X < m.width/3 {
 				m.activePane = 0
 			} else {
 				m.activePane = 1
@@ -221,10 +224,23 @@ func (m model) View() string {
 	if len(leftLines) > 0 {
 		// Calculate the actual border width: viewport width + padding (2) + borders (2)
 		borderWidth := m.leftPane.Width + 4
-		titlePart := " " + m.leftTitle + " "
+		// Add dot indicator if active, use border lines before title
+		var titlePart string
+		if m.activePane == 0 {
+			// Active: border lines + dot + title
+			titlePart = "─ ● " + m.leftTitle + " "
+		} else {
+			// Inactive: border lines + title
+			titlePart = "─── " + m.leftTitle + " "
+		}
 		if borderWidth > len(titlePart)+2 {
 			// Build new border line: corner + title + remaining border + corner
-			remainingBorder := strings.Repeat("─", borderWidth-len(titlePart)-2)
+			remainingBorder := ""
+			if m.activePane == 1 {
+				remainingBorder = strings.Repeat("─", borderWidth-len(titlePart)+4)
+			} else {
+				remainingBorder = strings.Repeat("─", borderWidth-len(titlePart)+2)
+			}
 			newPlainLine := "╭" + titlePart + remainingBorder + "╮"
 			// Apply the border color
 			styledTopLine := lipgloss.NewStyle().Foreground(leftBorderColor).Render(newPlainLine)
@@ -250,11 +266,24 @@ func (m model) View() string {
 	rightLines := strings.Split(rightPane, "\n")
 	if len(rightLines) > 0 {
 		// Calculate the actual border width: viewport width + padding (2) + borders (2)
-		borderWidth := m.rightPane.Width + 4
-		titlePart := " " + m.rightTitle + " "
+		borderWidth := m.rightPane.Width + 2
+		// Add dot indicator if active, use border lines before title
+		var titlePart string
+		if m.activePane == 1 {
+			// Active: border lines + dot + title
+			titlePart = "─ ● " + m.rightTitle + " "
+		} else {
+			// Inactive: border lines + title
+			titlePart = "─── " + m.rightTitle + " "
+		}
 		if borderWidth > len(titlePart)+2 {
 			// Build new border line: corner + title + remaining border + corner
-			remainingBorder := strings.Repeat("─", borderWidth-len(titlePart)-2)
+			remainingBorder := ""
+			if m.activePane == 1 {
+				remainingBorder = strings.Repeat("─", borderWidth-len(titlePart)+4)
+			} else {
+				remainingBorder = strings.Repeat("─", borderWidth-len(titlePart)+6)
+			}
 			newPlainLine := "╭" + titlePart + remainingBorder + "╮"
 			// Apply the border color
 			styledTopLine := lipgloss.NewStyle().Foreground(rightBorderColor).Render(newPlainLine)
@@ -280,10 +309,19 @@ func (m model) View() string {
 }
 
 func main() {
+	// Parse command-line flags
+	altScreen := flag.Bool("alt-screen", false, "Use alternate screen buffer (clears on exit)")
+	flag.Parse()
+
+	// Build program options
+	opts := []tea.ProgramOption{tea.WithMouseCellMotion()}
+	if *altScreen {
+		opts = append(opts, tea.WithAltScreen())
+	}
+
 	p := tea.NewProgram(
 		initialModel(),
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
+		opts...,
 	)
 
 	if _, err := p.Run(); err != nil {
