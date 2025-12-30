@@ -21,12 +21,12 @@ var (
 			Bold(true).
 			Foreground(lipgloss.Color("#FAFAFA")).
 			Background(lipgloss.Color("#7D56F4")).
-			Padding(0, 1)
+			PaddingLeft(1)
 
 	footerStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FAFAFA")).
 			Background(lipgloss.Color("#3C3C3C")).
-			Padding(0, 1)
+			PaddingLeft(1)
 
 	paneStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -101,7 +101,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Total width per pane = width/2
 			// Content width = total - border(2) - padding(2) = total - 4
 			paneWidth := (msg.Width / 2) - 4
-			paneHeight := msg.Height - headerHeight - footerHeight - 4
+			// Height: total - header(1) - footer(1) - pane borders(2) = total - 4
+			paneHeight := msg.Height - headerHeight - footerHeight - 2
 
 			// Initialize left pane
 			m.leftPane = viewport.New(paneWidth, paneHeight)
@@ -115,7 +116,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// Update pane dimensions on resize
 			paneWidth := (msg.Width / 2) - 4
-			paneHeight := msg.Height - headerHeight - footerHeight - 4
+			paneHeight := msg.Height - headerHeight - footerHeight - 2
 
 			m.leftPane.Width = paneWidth
 			m.leftPane.Height = paneHeight
@@ -172,6 +173,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
+		// Handle click to switch panes
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+			// Determine which pane was clicked based on X position
+			if msg.X < m.width/2 {
+				m.activePane = 0
+			} else {
+				m.activePane = 1
+			}
+		}
+
 		// Forward mouse events to viewports for scrolling
 		if m.activePane == 0 {
 			m.leftPane, cmd = m.leftPane.Update(msg)
@@ -208,13 +219,13 @@ func (m model) View() string {
 	// Embed title in the top border line
 	leftLines := strings.Split(leftPane, "\n")
 	if len(leftLines) > 0 {
-		// Calculate the actual border width: viewport width + padding (2)
-		borderWidth := m.leftPane.Width + 2
+		// Calculate the actual border width: viewport width + padding (2) + borders (2)
+		borderWidth := m.leftPane.Width + 4
 		titlePart := " " + m.leftTitle + " "
 		if borderWidth > len(titlePart)+2 {
 			// Build new border line: corner + title + remaining border + corner
-			remainingBorder := strings.Repeat("─", borderWidth-len(titlePart))
-			newPlainLine := "╭" + titlePart + remainingBorder + "─"
+			remainingBorder := strings.Repeat("─", borderWidth-len(titlePart)-2)
+			newPlainLine := "╭" + titlePart + remainingBorder + "╮"
 			// Apply the border color
 			styledTopLine := lipgloss.NewStyle().Foreground(leftBorderColor).Render(newPlainLine)
 			leftLines[0] = styledTopLine
@@ -238,13 +249,13 @@ func (m model) View() string {
 	// Embed title in the top border line
 	rightLines := strings.Split(rightPane, "\n")
 	if len(rightLines) > 0 {
-		// Calculate the actual border width: viewport width + padding (2)
-		borderWidth := m.rightPane.Width + 2
+		// Calculate the actual border width: viewport width + padding (2) + borders (2)
+		borderWidth := m.rightPane.Width + 4
 		titlePart := " " + m.rightTitle + " "
 		if borderWidth > len(titlePart)+2 {
 			// Build new border line: corner + title + remaining border + corner
-			remainingBorder := strings.Repeat("─", borderWidth-len(titlePart))
-			newPlainLine := "╭" + titlePart + remainingBorder + "─"
+			remainingBorder := strings.Repeat("─", borderWidth-len(titlePart)-2)
+			newPlainLine := "╭" + titlePart + remainingBorder + "╮"
 			// Apply the border color
 			styledTopLine := lipgloss.NewStyle().Foreground(rightBorderColor).Render(newPlainLine)
 			rightLines[0] = styledTopLine
@@ -260,18 +271,18 @@ func (m model) View() string {
 	footer := footerStyle.Width(m.width).Render(footerText)
 
 	// Combine all sections
-	ui := lipgloss.JoinVertical(
+	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		panes,
 		footer,
 	)
-	return strings.TrimRight(ui, "\n")
 }
 
 func main() {
 	p := tea.NewProgram(
 		initialModel(),
+		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
 
