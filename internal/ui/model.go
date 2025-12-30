@@ -82,7 +82,17 @@ type Model struct {
 	pendingQuickAction string
 	pendingStatusID    int
 	pendingNote        string
+
+	// Focus management
+	focusedPane paneType // "list" or "detail"
 }
+
+type paneType int
+
+const (
+	focusList paneType = iota
+	focusDetail
+)
 
 type issueItem struct {
 	issue redmine.Issue
@@ -218,6 +228,7 @@ func New(client *redmine.Client) Model {
 		notesInput:         notesInput,
 		pendingChanges:     make(map[string]interface{}),
 		issueCache:         make(map[int]*redmine.Issue),
+		focusedPane:        focusList,
 		filterAssignedToMe: true, // Default to showing only my tasks
 	}
 }
@@ -438,26 +449,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Normal navigation mode
 			switch {
-			case key.Matches(msg, keys.Up), key.Matches(msg, keys.Down):
-				m.issueList, cmd = m.issueList.Update(msg)
-				cmds = append(cmds, cmd)
+			case key.Matches(msg, keys.Tab):
+				// Switch focus between panes
+				if m.focusedPane == focusList {
+					m.focusedPane = focusDetail
+				} else {
+					m.focusedPane = focusList
+				}
 
-				// Update selected issue instantly from cache
-				if item, ok := m.issueList.SelectedItem().(issueItem); ok {
-					if m.currentIssue == nil || m.currentIssue.ID != item.issue.ID {
-						// Use cached data for instant display
-						if cachedIssue, exists := m.issueCache[item.issue.ID]; exists {
-							m.currentIssue = cachedIssue
-							m.viewport.SetContent(m.renderIssueDetail())
-							m.viewport.GotoTop()
-						} else {
-							// Fallback: use the basic issue from list
-							issueCopy := item.issue
-							m.currentIssue = &issueCopy
-							m.viewport.SetContent(m.renderIssueDetail())
-							m.viewport.GotoTop()
+			case key.Matches(msg, keys.Up), key.Matches(msg, keys.Down):
+				if m.focusedPane == focusList {
+					// Navigate issue list
+					m.issueList, cmd = m.issueList.Update(msg)
+					cmds = append(cmds, cmd)
+
+					// Load full issue details including journals
+					if item, ok := m.issueList.SelectedItem().(issueItem); ok {
+						if m.currentIssue == nil || m.currentIssue.ID != item.issue.ID {
+							// Use cached data for instant display
+							if cachedIssue, exists := m.issueCache[item.issue.ID]; exists {
+								m.currentIssue = cachedIssue
+								m.viewport.SetContent(m.renderIssueDetail())
+								m.viewport.GotoTop()
+							} else {
+								// Fallback: use the basic issue from list
+								issueCopy := item.issue
+								m.currentIssue = &issueCopy
+								m.viewport.SetContent(m.renderIssueDetail())
+								m.viewport.GotoTop()
+							}
+							// Always load full details with journals in the background
+							cmds = append(cmds, m.loadIssueDetail(item.issue.ID))
 						}
 					}
+				} else {
+					// Scroll detail viewport
+					if key.Matches(msg, keys.Up) {
+						m.viewport.LineUp(1)
+					} else {
+						m.viewport.LineDown(1)
+					}
+				}
+
+			case msg.String() == "pgup":
+				if m.focusedPane == focusDetail {
+					m.viewport.HalfViewUp()
+				}
+
+			case msg.String() == "pgdown":
+				if m.focusedPane == focusDetail {
+					m.viewport.HalfViewDown()
 				}
 
 			case key.Matches(msg, keys.Projects):
@@ -815,15 +856,23 @@ func (m Model) View() string {
 		header := headerStyle.Width(m.width).Render(headerLeft + strings.Repeat(" ", headerPadding) + headerRight)
 
 		// Calculate widths - adjust for better spacing
-		listWidth := int(float64(m.width)*0.40) - 1 // Move left border 1 char left
-		detailWidth := m.width - listWidth + 2      // Right pane gains 3 chars total (1 from left + 2 extra)
+		listWidth := int(float64(m.width) * 0.40)
+		detailWidth := m.width - listWidth
 
 		// Left panel title - match exact panel width
-		leftTitle := panelTitleStyle.Width(listWidth).Render("ISSUES")
+		leftTitleText := "ISSUES"
+		if m.focusedPane == focusList {
+			leftTitleText = "● " + leftTitleText // Add indicator when focused
+		}
+		leftTitle := panelTitleStyle.Width(listWidth).Render(leftTitleText)
 
-		// Left panel content
+		// Left panel content - highlight border when focused (more padding on right)
 		leftContent := m.issueList.View()
-		leftPanel := panelStyle.Width(listWidth - 1).Height(m.height - 4).Render(leftContent)
+		leftPanelStyle := panelStyle
+		if m.focusedPane == focusList {
+			leftPanelStyle = leftPanelStyle.BorderForeground(lipgloss.Color(colorPrimary))
+		}
+		leftPanel := leftPanelStyle.Width(listWidth - 3).Height(m.height - 4).Render(leftContent)
 
 		// Right panel title - match exact panel width
 		rightTitleText := ""
@@ -832,16 +881,23 @@ func (m Model) View() string {
 		} else {
 			rightTitleText = "ISSUE DETAILS"
 		}
-		rightTitle := panelTitleStyle.Width(detailWidth - 2).Render(rightTitleText)
+		if m.focusedPane == focusDetail {
+			rightTitleText = "● " + rightTitleText // Add indicator when focused
+		}
+		rightTitle := panelTitleStyle.Width(detailWidth).Render(rightTitleText)
 
-		// Right panel content
+		// Right panel content - highlight border when focused (less padding on right)
 		var rightContent string
 		if m.currentIssue != nil {
 			rightContent = m.viewport.View()
 		} else {
 			rightContent = dimStyle.Render("← Select an issue to view details")
 		}
-		rightPanel := rightPanelStyle.Width(detailWidth - 3).Height(m.height - 4).Render(rightContent)
+		rightPanelStyleCurrent := rightPanelStyle
+		if m.focusedPane == focusDetail {
+			rightPanelStyleCurrent = rightPanelStyleCurrent.BorderForeground(lipgloss.Color(colorPrimary))
+		}
+		rightPanel := rightPanelStyleCurrent.Width(detailWidth - 2).Height(m.height - 4).Render(rightContent)
 
 		// Combine panels with titles
 		leftSection := lipgloss.JoinVertical(lipgloss.Left, leftTitle, leftPanel)
@@ -899,6 +955,7 @@ func (m Model) renderFooter() string {
 
 	shortcuts := []string{
 		footerKeyStyle.Render("↑↓/jk") + " navigate",
+		footerKeyStyle.Render("tab") + " switch pane",
 		footerKeyStyle.Render("enter") + " view",
 		footerKeyStyle.Render("e") + " edit",
 		footerKeyStyle.Render("p") + " projects",
@@ -1061,7 +1118,49 @@ func (m Model) renderIssueDetail() string {
 	} else {
 		b.WriteString(dimStyle.Render("(no description)"))
 	}
-	b.WriteString("\n")
+	b.WriteString("\n\n")
+
+	// Notes/History section
+	if len(m.currentIssue.Journals) > 0 {
+		b.WriteString(labelStyle.Render("━━ NOTES & HISTORY "))
+		b.WriteString(dimStyle.Render(strings.Repeat("━", max(0, detailWidth-19))))
+		b.WriteString("\n\n")
+
+		for _, journal := range m.currentIssue.Journals {
+			hasContent := journal.Notes != "" || len(journal.Details) > 0
+			if hasContent {
+				// Note header with user and date
+				noteHeader := labelStyle.Render(journal.User.Name) + " " +
+					dimStyle.Render(journal.CreatedOn.Format("2006-01-02 15:04"))
+				b.WriteString(noteHeader)
+				b.WriteString("\n")
+
+				// Show field changes
+				if len(journal.Details) > 0 {
+					for _, detail := range journal.Details {
+						changeText := fmt.Sprintf("  • %s: ", detail.Name)
+						if detail.OldValue != "" {
+							changeText += fmt.Sprintf("%s → %s", detail.OldValue, detail.NewValue)
+						} else {
+							changeText += fmt.Sprintf("set to %s", detail.NewValue)
+						}
+						b.WriteString(dimStyle.Render(changeText))
+						b.WriteString("\n")
+					}
+				}
+
+				// Show note content if present
+				if journal.Notes != "" {
+					if len(journal.Details) > 0 {
+						b.WriteString("\n")
+					}
+					wrappedNote := wrapText(journal.Notes, detailWidth)
+					b.WriteString(valueStyle.Render(wrappedNote))
+				}
+				b.WriteString("\n\n")
+			}
+		}
+	}
 
 	return b.String()
 }

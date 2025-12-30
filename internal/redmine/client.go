@@ -69,6 +69,22 @@ type Issue struct {
 	DoneRatio   int       `json:"done_ratio"`
 	CreatedOn   time.Time `json:"created_on"`
 	UpdatedOn   time.Time `json:"updated_on"`
+	Journals    []Journal `json:"journals,omitempty"`
+}
+
+type JournalDetail struct {
+	Property string `json:"property"`
+	Name     string `json:"name"`
+	OldValue string `json:"old_value"`
+	NewValue string `json:"new_value"`
+}
+
+type Journal struct {
+	ID        int             `json:"id"`
+	User      User            `json:"user"`
+	Notes     string          `json:"notes"`
+	CreatedOn time.Time       `json:"created_on"`
+	Details   []JournalDetail `json:"details"`
 }
 
 type Project struct {
@@ -145,7 +161,7 @@ func (c *Client) GetIssues(projectID int, assignedToMe bool, statusOpen bool, li
 
 // GetIssue fetches a single issue by ID
 func (c *Client) GetIssue(id int) (*Issue, error) {
-	path := fmt.Sprintf("/issues/%d.json", id)
+	path := fmt.Sprintf("/issues/%d.json?include=journals", id)
 	data, err := c.doRequest("GET", path, nil)
 	if err != nil {
 		return nil, err
