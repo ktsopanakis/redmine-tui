@@ -102,7 +102,27 @@ func (i issueItem) Description() string {
 }
 
 func (i issueItem) FilterValue() string {
-	return i.issue.Subject
+	// Return all searchable fields for comprehensive filtering
+	assignee := "unassigned"
+	if i.issue.AssignedTo != nil {
+		assignee = i.issue.AssignedTo.Name
+	}
+	author := i.issue.Author.Name
+	desc := i.issue.Description
+	if len(desc) > 200 {
+		desc = desc[:200]
+	}
+	// Combine all searchable fields
+	return fmt.Sprintf("#%d %s %s %s %s %s %s %s",
+		i.issue.ID,
+		i.issue.Subject,
+		i.issue.Status.Name,
+		i.issue.Project.Name,
+		i.issue.Tracker.Name,
+		assignee,
+		author,
+		desc,
+	)
 }
 
 type projectItem struct {
@@ -141,10 +161,12 @@ func New(client *redmine.Client) Model {
 	// Initialize issue list
 	issueDelegate := list.NewDefaultDelegate()
 	issueList := list.New([]list.Item{}, issueDelegate, 0, 0)
-	issueList.Title = "" // No title, header shows Redmine URL
+	issueList.Title = ""
 	issueList.SetShowStatusBar(false)
 	issueList.SetFilteringEnabled(true)
 	issueList.Styles.Title = titleStyle
+	issueList.Styles.TitleBar = lipgloss.NewStyle()
+	issueList.SetShowTitle(false)
 
 	// Initialize project list
 	projectDelegate := list.NewDefaultDelegate()
@@ -299,16 +321,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Split screen: 35% for list, 65% for detail - use full width
-		listWidth := int(float64(msg.Width) * 0.35)
+		// Split screen: 40% for list, 60% for detail
+		listWidth := int(float64(msg.Width) * 0.40)
 		detailWidth := msg.Width - listWidth
 
-		// List: account for border (2), padding (4), header (1)
-		m.issueList.SetSize(listWidth-6, msg.Height-8)
+		// List: account for border and padding
+		m.issueList.SetSize(listWidth-3, msg.Height-5)
 		m.projectList.SetSize(msg.Width, msg.Height-2)
-		// Viewport: account for border (2), padding (4), header (1)
-		m.viewport.Width = detailWidth - 6
-		m.viewport.Height = msg.Height - 8
+		// Viewport: account for padding
+		m.viewport.Width = detailWidth - 3
+		m.viewport.Height = msg.Height - 5
 		m.statusList.SetSize(30, 10)
 
 		m.subjectInput.Width = detailWidth - 20
@@ -618,13 +640,27 @@ func (m Model) handleEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Handle enter for status list
 		if m.activeField == fieldStatus {
 			if item, ok := m.statusList.SelectedItem().(statusItem); ok {
-				m.pendingChanges["status_id"] = item.status.ID
-				m.statusSelected = item.status.ID
+				if item.status.ID != m.currentIssue.Status.ID {
+					m.pendingChanges["status_id"] = item.status.ID
+					m.statusSelected = item.status.ID
+				} else {
+					delete(m.pendingChanges, "status_id")
+				}
 			}
 		}
 
+	case key.Matches(msg, keys.Up), key.Matches(msg, keys.Down):
+		// Handle up/down - either for status list or viewport scrolling
+		if m.activeField == fieldStatus {
+			m.statusList, cmd = m.statusList.Update(msg)
+			cmds = append(cmds, cmd)
+		} else {
+			m.viewport, cmd = m.viewport.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+
 	default:
-		// Update the active input field
+		// Update only the active input field
 		switch m.activeField {
 		case fieldSubject:
 			m.subjectInput, cmd = m.subjectInput.Update(msg)
@@ -754,73 +790,161 @@ func (m Model) View() string {
 	}
 
 	var content string
-	var help string
 
 	switch m.currentView {
 	case viewSplitScreen:
-		// Header with Redmine URL spanning full width at the top
-		header := headerStyle.Width(m.width).Render(fmt.Sprintf("🔗 %s", m.redmineURL))
+		// Header bar
+		headerLeft := fmt.Sprintf("🔗 %s", m.redmineURL)
+		headerRight := ""
+		if m.currentProject != nil {
+			headerRight = fmt.Sprintf("Project: %s", m.currentProject.Name)
+		} else {
+			headerRight = "All Projects"
+		}
+		if m.filterAssignedToMe {
+			headerRight += " • My Tasks"
+		}
+		if m.filterStatusOpen {
+			headerRight += " • Open Only"
+		}
 
-		// Calculate widths - use 35/65 split and full width
-		listWidth := int(float64(m.width) * 0.35)
-		detailWidth := m.width - listWidth
+		headerPadding := m.width - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight) - 4
+		if headerPadding < 0 {
+			headerPadding = 0
+		}
+		header := headerStyle.Width(m.width).Render(headerLeft + strings.Repeat(" ", headerPadding) + headerRight)
 
-		// Left panel: issue list with border - same height as right
-		leftPanelContent := m.issueList.View()
-		leftPanel := listPaneStyle.Width(listWidth - 2).Height(m.height - 4).Render(leftPanelContent)
+		// Calculate widths - adjust for better spacing
+		listWidth := int(float64(m.width)*0.40) - 1 // Move left border 1 char left
+		detailWidth := m.width - listWidth + 2      // Right pane gains 3 chars total (1 from left + 2 extra)
 
-		// Right panel: detail with border - same height as left
-		var rightPanelContent string
+		// Left panel title - match exact panel width
+		leftTitle := panelTitleStyle.Width(listWidth).Render("ISSUES")
+
+		// Left panel content
+		leftContent := m.issueList.View()
+		leftPanel := panelStyle.Width(listWidth - 1).Height(m.height - 4).Render(leftContent)
+
+		// Right panel title - match exact panel width
+		rightTitleText := ""
 		if m.currentIssue != nil {
-			rightPanelContent = m.viewport.View()
+			rightTitleText = fmt.Sprintf("ISSUE #%d", m.currentIssue.ID)
 		} else {
-			rightPanelContent = "Select an issue to view details"
+			rightTitleText = "ISSUE DETAILS"
 		}
-		rightPanel := detailStyle.Width(detailWidth - 2).Height(m.height - 4).Render(rightPanelContent)
+		rightTitle := panelTitleStyle.Width(detailWidth - 2).Render(rightTitleText)
 
-		// Combine panels side by side
-		panels := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
-
-		// Stack header on top of panels
-		content = lipgloss.JoinVertical(lipgloss.Left, header, panels)
-
-		// Help text
-		if m.editMode {
-			changesInfo := ""
-			if len(m.pendingChanges) > 0 {
-				changesInfo = fmt.Sprintf(" [%d pending changes]", len(m.pendingChanges))
-			}
-			help = helpStyle.Render(fmt.Sprintf("EDIT MODE%s | tab/shift+tab: navigate • ctrl+s: save • esc: cancel • q: quit", changesInfo))
+		// Right panel content
+		var rightContent string
+		if m.currentIssue != nil {
+			rightContent = m.viewport.View()
 		} else {
-			projectInfo := "All Projects"
-			if m.currentProject != nil {
-				projectInfo = m.currentProject.Name
-			}
-			filterInfo := ""
-			if m.filterAssignedToMe {
-				filterInfo = " [My Tasks]"
-			}
-			help = helpStyle.Render(fmt.Sprintf("Project: %s%s | f: filters • ?: help • c/i/x: quick actions • q: quit", projectInfo, filterInfo))
+			rightContent = dimStyle.Render("← Select an issue to view details")
 		}
+		rightPanel := rightPanelStyle.Width(detailWidth - 3).Height(m.height - 4).Render(rightContent)
+
+		// Combine panels with titles
+		leftSection := lipgloss.JoinVertical(lipgloss.Left, leftTitle, leftPanel)
+		rightSection := lipgloss.JoinVertical(lipgloss.Left, rightTitle, rightPanel)
+		panels := lipgloss.JoinHorizontal(lipgloss.Top, leftSection, rightSection)
+
+		// Footer with shortcuts
+		footer := m.renderFooter()
+
+		// Combine all
+		content = lipgloss.JoinVertical(lipgloss.Left, header, panels, footer)
 
 	case viewProjectList:
-		content = m.projectList.View()
-		help = helpStyle.Render("enter: select • esc: back • q: quit")
+		header := headerStyle.Width(m.width).Render("SELECT PROJECT")
+		body := m.projectList.View()
+		footer := footerStyle.Width(m.width).Render(" enter: select │ esc: back │ q: quit")
+		content = lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 
 	case viewFilterPopup:
-		content = m.renderFilterPopup()
-		help = helpStyle.Render("1-9: toggle filter • esc/f: close • q: quit")
+		header := headerStyle.Width(m.width).Render("FILTERS")
+		body := m.renderFilterPopup()
+		footer := footerStyle.Width(m.width).Render(" 1-9: toggle │ esc/f: close │ q: quit")
+		content = lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 
 	case viewHelpPopup:
-		content = m.renderHelpPopup()
-		help = helpStyle.Render("Any key to close")
+		header := headerStyle.Width(m.width).Render("HELP")
+		body := m.renderHelpPopup()
+		footer := footerStyle.Width(m.width).Render(" Any key to close")
+		content = lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 
 	case viewConfirmPopup:
-		content = m.renderConfirmPopup()
-		help = helpStyle.Render("enter: confirm • esc: cancel")
+		header := headerStyle.Width(m.width).Render("CONFIRM ACTION")
+		body := m.renderConfirmPopup()
+		footer := footerStyle.Width(m.width).Render(" enter: confirm │ esc: cancel")
+		content = lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 	}
 
-	return fmt.Sprintf("%s\n%s", content, help)
+	return content
+}
+
+func (m Model) renderFooter() string {
+	if m.editMode {
+		shortcuts := []string{}
+		if len(m.pendingChanges) > 0 {
+			shortcuts = append(shortcuts, footerKeyStyle.Render("ctrl+s")+" save")
+		}
+		shortcuts = append(shortcuts,
+			footerKeyStyle.Render("tab")+" next field",
+			footerKeyStyle.Render("↑↓")+" scroll/select",
+			footerKeyStyle.Render("esc")+" cancel",
+			footerKeyStyle.Render("q")+" quit",
+		)
+		return footerStyle.Width(m.width).Render(" " + strings.Join(shortcuts, " │ "))
+	}
+
+	shortcuts := []string{
+		footerKeyStyle.Render("↑↓/jk") + " navigate",
+		footerKeyStyle.Render("enter") + " view",
+		footerKeyStyle.Render("e") + " edit",
+		footerKeyStyle.Render("p") + " projects",
+		footerKeyStyle.Render("f") + " filters",
+		footerKeyStyle.Render("/") + " search",
+		footerKeyStyle.Render("c/i/x") + " quick actions",
+		footerKeyStyle.Render("r") + " refresh",
+		footerKeyStyle.Render("?") + " help",
+		footerKeyStyle.Render("q") + " quit",
+	}
+	return footerStyle.Width(m.width).Render(" " + strings.Join(shortcuts, " │ "))
+}
+
+// wrapText wraps text to fit within the given width
+func wrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	var result strings.Builder
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return text
+	}
+
+	lineLen := 0
+	for i, word := range words {
+		wordLen := len(word)
+		if lineLen == 0 {
+			// First word on line
+			result.WriteString(word)
+			lineLen = wordLen
+		} else if lineLen+1+wordLen <= width {
+			// Word fits on current line
+			result.WriteString(" " + word)
+			lineLen += 1 + wordLen
+		} else {
+			// Start new line
+			result.WriteString("\n" + word)
+			lineLen = wordLen
+		}
+		if i < len(words)-1 && lineLen >= width {
+			result.WriteString("\n")
+			lineLen = 0
+		}
+	}
+	return result.String()
 }
 
 func (m Model) renderIssueDetail() string {
@@ -828,118 +952,116 @@ func (m Model) renderIssueDetail() string {
 		return ""
 	}
 
+	// Calculate available width for wrapping
+	detailWidth := int(float64(m.width)*0.60) - 6
+	if detailWidth < 40 {
+		detailWidth = 40
+	}
+
 	var b strings.Builder
 
-	// Title / Subject
-	if m.editMode && m.activeField == fieldSubject {
-		b.WriteString(editHeaderStyle.Render("Subject (editing):"))
+	// EDIT MODE - Show as editable form
+	if m.editMode {
+		b.WriteString(titleStyle.Render("EDIT ISSUE #" + fmt.Sprintf("%d", m.currentIssue.ID)))
+		b.WriteString("\n\n")
+
+		// Subject
+		b.WriteString(labelStyle.Render("Subject:"))
 		b.WriteString("\n")
 		b.WriteString(m.subjectInput.View())
 		b.WriteString("\n\n")
-	} else {
-		b.WriteString(titleStyle.Render(fmt.Sprintf("#%d - %s", m.currentIssue.ID, m.currentIssue.Subject)))
-		b.WriteString("\n\n")
-	}
 
-	// Project (read-only)
-	b.WriteString(labelStyle.Render("Project: "))
-	b.WriteString(m.currentIssue.Project.Name)
-	b.WriteString("\n")
-
-	// Status
-	if m.editMode && m.activeField == fieldStatus {
-		b.WriteString(editHeaderStyle.Render("Status (use ↑/↓ to select, enter to confirm):"))
+		// Status
+		b.WriteString(labelStyle.Render("Status: (↑↓ to select)"))
 		b.WriteString("\n")
 		b.WriteString(m.statusList.View())
-		b.WriteString("\n")
-	} else {
-		b.WriteString(labelStyle.Render("Status: "))
-		// Show pending change if exists
-		if statusID, ok := m.pendingChanges["status_id"].(int); ok {
-			for _, s := range m.statuses {
-				if s.ID == statusID {
-					b.WriteString(changedStyle.Render(s.Name + " *"))
-					break
-				}
-			}
-		} else {
-			b.WriteString(m.currentIssue.Status.Name)
-		}
-		b.WriteString("\n")
-	}
+		b.WriteString("\n\n")
 
-	// Priority (read-only)
-	b.WriteString(labelStyle.Render("Priority: "))
-	b.WriteString(m.currentIssue.Priority.Name)
-	b.WriteString("\n")
-
-	// Tracker (read-only)
-	b.WriteString(labelStyle.Render("Tracker: "))
-	b.WriteString(m.currentIssue.Tracker.Name)
-	b.WriteString("\n")
-
-	// Assigned to (read-only)
-	if m.currentIssue.AssignedTo != nil {
-		b.WriteString(labelStyle.Render("Assigned to: "))
-		b.WriteString(m.currentIssue.AssignedTo.Name)
-		b.WriteString("\n")
-	}
-
-	// Done ratio
-	if m.editMode && m.activeField == fieldDoneRatio {
-		b.WriteString(editHeaderStyle.Render("Done % (0-100):"))
+		// Done %
+		b.WriteString(labelStyle.Render("Done % (0-100):"))
 		b.WriteString("\n")
 		b.WriteString(m.doneRatioInput.View())
-		b.WriteString("\n")
-	} else {
-		b.WriteString(labelStyle.Render("Done: "))
-		if ratio, ok := m.pendingChanges["done_ratio"].(int); ok {
-			b.WriteString(changedStyle.Render(fmt.Sprintf("%d%% *", ratio)))
-		} else {
-			b.WriteString(fmt.Sprintf("%d%%", m.currentIssue.DoneRatio))
-		}
-		b.WriteString("\n")
-	}
+		b.WriteString("\n\n")
 
-	// Due date (read-only)
-	if m.currentIssue.DueDate != "" {
-		b.WriteString(labelStyle.Render("Due date: "))
-		b.WriteString(m.currentIssue.DueDate)
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-
-	// Description
-	if m.editMode && m.activeField == fieldDescription {
-		b.WriteString(editHeaderStyle.Render("Description (editing):"))
+		// Description
+		b.WriteString(labelStyle.Render("Description:"))
 		b.WriteString("\n")
 		b.WriteString(m.descInput.View())
 		b.WriteString("\n\n")
-	} else {
-		b.WriteString(labelStyle.Render("Description:"))
-		b.WriteString("\n")
-		if desc, ok := m.pendingChanges["description"].(string); ok {
-			b.WriteString(changedStyle.Render(desc + " *"))
-		} else if m.currentIssue.Description != "" {
-			b.WriteString(m.currentIssue.Description)
-		} else {
-			b.WriteString(dimStyle.Render("No description"))
-		}
-		b.WriteString("\n\n")
-	}
 
-	// Notes field (only in edit mode)
-	if m.editMode {
-		if m.activeField == fieldNotes {
-			b.WriteString(editHeaderStyle.Render("Notes (add comments about your changes):"))
-		} else {
-			b.WriteString(labelStyle.Render("Notes:"))
-		}
+		// Notes
+		b.WriteString(labelStyle.Render("Update Notes:"))
 		b.WriteString("\n")
 		b.WriteString(m.notesInput.View())
-		b.WriteString("\n")
+		b.WriteString("\n\n")
+
+		if len(m.pendingChanges) > 0 {
+			b.WriteString(changedStyle.Render(fmt.Sprintf("✓ %d field(s) modified - Press Ctrl+S to save", len(m.pendingChanges))))
+		} else {
+			b.WriteString(dimStyle.Render("No changes yet"))
+		}
+
+		return b.String()
 	}
+
+	// VIEW MODE - Compact information display
+	b.WriteString(titleStyle.Render(m.currentIssue.Subject))
+	b.WriteString("\n\n")
+
+	// Metadata grid - Row 1
+	metaItems := []string{
+		labelStyle.Render("Project:") + " " + valueStyle.Render(m.currentIssue.Project.Name),
+		labelStyle.Render("Tracker:") + " " + valueStyle.Render(m.currentIssue.Tracker.Name),
+		labelStyle.Render("Priority:") + " " + valueStyle.Render(m.currentIssue.Priority.Name),
+	}
+	b.WriteString(wrapText(strings.Join(metaItems, "  │  "), detailWidth))
+	b.WriteString("\n")
+
+	// Metadata grid - Row 2
+	metaItems = []string{
+		labelStyle.Render("Status:") + " " + statusStyle.Render(m.currentIssue.Status.Name),
+		labelStyle.Render("Done:") + " " + valueStyle.Render(fmt.Sprintf("%d%%", m.currentIssue.DoneRatio)),
+	}
+	if m.currentIssue.AssignedTo != nil {
+		metaItems = append(metaItems, labelStyle.Render("Assigned:")+" "+valueStyle.Render(m.currentIssue.AssignedTo.Name))
+	} else {
+		metaItems = append(metaItems, labelStyle.Render("Assigned:")+" "+dimStyle.Render("unassigned"))
+	}
+	b.WriteString(wrapText(strings.Join(metaItems, "  │  "), detailWidth))
+	b.WriteString("\n")
+
+	// Metadata grid - Row 3 (Author and dates)
+	metaItems = []string{
+		labelStyle.Render("Author:") + " " + valueStyle.Render(m.currentIssue.Author.Name),
+	}
+	if m.currentIssue.StartDate != "" {
+		metaItems = append(metaItems, labelStyle.Render("Start:")+" "+valueStyle.Render(m.currentIssue.StartDate))
+	}
+	if m.currentIssue.DueDate != "" {
+		metaItems = append(metaItems, labelStyle.Render("Due:")+" "+valueStyle.Render(m.currentIssue.DueDate))
+	}
+	b.WriteString(wrapText(strings.Join(metaItems, "  │  "), detailWidth))
+	b.WriteString("\n")
+
+	// Timestamps
+	timeItems := []string{
+		labelStyle.Render("Created:") + " " + dimStyle.Render(m.currentIssue.CreatedOn.Format("2006-01-02 15:04")),
+		labelStyle.Render("Updated:") + " " + dimStyle.Render(m.currentIssue.UpdatedOn.Format("2006-01-02 15:04")),
+	}
+	b.WriteString(wrapText(strings.Join(timeItems, "  │  "), detailWidth))
+	b.WriteString("\n\n")
+
+	// Description section with wrapping
+	b.WriteString(labelStyle.Render("━━ DESCRIPTION "))
+	b.WriteString(dimStyle.Render(strings.Repeat("━", max(0, detailWidth-15))))
+	b.WriteString("\n")
+	if m.currentIssue.Description != "" {
+		wrappedDesc := wrapText(m.currentIssue.Description, detailWidth)
+		b.WriteString(valueStyle.Render(wrappedDesc))
+	} else {
+		b.WriteString(dimStyle.Render("(no description)"))
+	}
+	b.WriteString("\n")
 
 	return b.String()
 }
@@ -1069,64 +1191,102 @@ func min(a, b int) int {
 	return b
 }
 
-// Styles
-var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4")).
-			MarginBottom(1)
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
+// Styles - btop inspired
+var (
+	// Colors
+	colorPrimary   = lipgloss.Color("#50fa7b")
+	colorSecondary = lipgloss.Color("#8be9fd")
+	colorAccent    = lipgloss.Color("#ffb86c")
+	colorDanger    = lipgloss.Color("#ff5555")
+	colorMuted     = lipgloss.Color("#6272a4")
+	colorBg        = lipgloss.Color("#282a36")
+	colorBgLight   = lipgloss.Color("#44475a")
+
+	// Header bar
+	headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#282a36")).
+			Background(colorPrimary).
+			Padding(0, 2)
+
+	// Footer bar
+	footerStyle = lipgloss.NewStyle().
+			Foreground(colorMuted).
+			Background(colorBgLight).
+			Padding(0, 1)
+
+	footerKeyStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorPrimary)
+
+	// Panel styles
+	panelTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorSecondary).
+			Background(colorBgLight).
+			Padding(0, 1)
+
+	panelStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, true, false, false).
+			BorderForeground(colorMuted).
+			PaddingLeft(1)
+
+	rightPanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, true, false, false).
+			BorderForeground(colorMuted).
+			PaddingLeft(2)
+
+	// Content styles
 	labelStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#04B575"))
+			Foreground(colorSecondary)
 
-	editHeaderStyle = lipgloss.NewStyle().
+	valueStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#f8f8f2"))
+
+	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FFA500")).
-			Underline(true)
+			Foreground(colorAccent)
+
+	statusStyle = lipgloss.NewStyle().
+			Foreground(colorPrimary).
+			Bold(true)
 
 	changedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFA500")).
+			Foreground(colorAccent).
 			Italic(true)
 
 	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#666666"))
+			Foreground(colorMuted).
+			Italic(true)
 
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#626262")).
-			Padding(1, 0, 0, 2)
+	editHeaderStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorAccent).
+			Underline(true)
 
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
+			Foreground(colorDanger).
 			Bold(true).
 			Padding(1)
 
 	loadingStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#7D56F4")).
+			Foreground(colorPrimary).
 			Bold(true).
 			Padding(1)
 
-	detailStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#7D56F4")).
-			Padding(1, 2)
-
-	listPaneStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#04B575")).
-			Padding(1, 2)
-
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#7D56F4")).
-			Padding(0, 1)
-
 	popupStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FFA500")).
+			BorderForeground(colorAccent).
 			Padding(2, 4).
-			Background(lipgloss.Color("#1a1a1a"))
+			Background(colorBg)
 )
 
 // Key bindings
