@@ -23,8 +23,8 @@ func RenderModal(cfg ModalConfig) string {
 	// Calculate maximum content height if not specified
 	maxContentHeight := cfg.MaxHeight
 	if maxContentHeight == 0 {
-		// Use 80% of container height, leaving room for padding and border
-		maxContentHeight = int(float64(cfg.Height) * 0.7)
+		// Use 85% of container height, leaving room for padding and border
+		maxContentHeight = int(float64(cfg.Height) * 0.85)
 	}
 
 	// Reserve space for title, separator, borders, and padding
@@ -122,7 +122,7 @@ func RenderModal(cfg ModalConfig) string {
 	return centerModal(box, cfg.Width, cfg.Height)
 }
 
-// centerModal centers a modal box in the container
+// centerModal centers a modal box in the container with opaque background
 func centerModal(box string, containerWidth, containerHeight int) string {
 	boxHeight := lipgloss.Height(box)
 	boxWidth := lipgloss.Width(box)
@@ -138,17 +138,33 @@ func centerModal(box string, containerWidth, containerHeight int) string {
 		verticalPadding = 0
 	}
 
+	// Create background overlay style
+	overlayStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("#000000")).
+		Foreground(lipgloss.Color("#333333"))
+
 	var result strings.Builder
 
-	// Top padding
+	// Top padding with opaque background
 	for i := 0; i < verticalPadding; i++ {
-		result.WriteString("\n")
+		result.WriteString(overlayStyle.Render(strings.Repeat(" ", containerWidth)) + "\n")
 	}
 
-	// Add the box with horizontal padding
+	// Add the box with horizontal padding (opaque background on sides)
 	boxLines := strings.Split(box, "\n")
 	for _, line := range boxLines {
-		result.WriteString(strings.Repeat(" ", horizontalPadding) + line + "\n")
+		leftPadding := overlayStyle.Render(strings.Repeat(" ", horizontalPadding))
+		rightPadding := overlayStyle.Render(strings.Repeat(" ", containerWidth-horizontalPadding-lipgloss.Width(line)))
+		result.WriteString(leftPadding + line + rightPadding + "\n")
+	}
+
+	// Bottom padding with opaque background
+	bottomPadding := containerHeight - verticalPadding - boxHeight
+	if bottomPadding < 0 {
+		bottomPadding = 0
+	}
+	for i := 0; i < bottomPadding; i++ {
+		result.WriteString(overlayStyle.Render(strings.Repeat(" ", containerWidth)) + "\n")
 	}
 
 	return result.String()
