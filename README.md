@@ -10,6 +10,33 @@ A glamorous Terminal User Interface (TUI) application built with Go and Charm li
 - **Redmine Integration**: Connect to your Redmine instance via API
 - **Mouse Support**: Click to switch panes, scroll with mouse wheel, native text selection
 - **Alt-Screen Mode**: Optional mode that clears output on exit
+- **Help Modal**: Press `?` for comprehensive keyboard shortcuts
+- **Edit Mode**: Modify issue fields directly from the TUI
+- **Filtering**: Filter by users, projects, and text search
+
+## Installation
+
+### Using mise (Recommended)
+
+Install [mise](https://mise.jdx.dev/) if you haven't already, then:
+
+```bash
+git clone https://github.com/ktsopanakis/redmine-tui.git
+cd redmine-tui
+mise install          # Installs Go 1.25.4
+mise run build        # Builds the binary
+mise run install      # Installs to $GOPATH/bin
+```
+
+### Manual Installation
+
+Requires Go 1.25.4 or later:
+
+```bash
+git clone https://github.com/ktsopanakis/redmine-tui.git
+cd redmine-tui
+go build
+```
 
 ## Quick Start
 

@@ -1,0 +1,23 @@
+[tools]
+go = "1.25.4"
+
+[tasks.build]
+description = "Build the redmine-tui binary"
+run = "go build -o redmine-tui"
+
+[tasks.install]
+description = "Install redmine-tui to $GOPATH/bin"
+run = "go install"
+
+[tasks.dev]
+description = "Run the application in development mode"
+run = "./redmine-tui"
+depends = ["build"]
+
+[tasks.test]
+description = "Run tests"
+run = "go test ./..."
+
+[tasks.clean]
+description = "Clean build artifacts"
+run = "rm -f redmine-tui"
