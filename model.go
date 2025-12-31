@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -274,44 +275,67 @@ func (m *model) updatePaneContent() {
 			issue := m.issues[i]
 			isSelected := i == m.selectedIndex
 
-			// Line 1: ID and Subject
-			line1 := fmt.Sprintf("#%-6d %s", issue.ID, issue.Subject)
+			// Styles for different components with vibrant colors
+			idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00D7FF"))       // Cyan
+			titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))    // White
+			statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700"))   // Gold
+			projectStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379"))  // Green
+			assigneeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C678DD")) // Purple
+
+			var linePrefix string
 			if isSelected {
-				leftContent += lipgloss.NewStyle().
-					Bold(true).
+				// Subtle background tint + bold for selection
+				subtleBg := lipgloss.Color("#2A2A3A") // Dark subtle background
+				idStyle = idStyle.Background(subtleBg).Bold(true)
+				titleStyle = titleStyle.Background(subtleBg).Bold(true)
+				statusStyle = statusStyle.Background(subtleBg).Bold(true)
+				projectStyle = projectStyle.Background(subtleBg).Bold(true)
+				assigneeStyle = assigneeStyle.Background(subtleBg).Bold(true)
+				linePrefix = lipgloss.NewStyle().
 					Foreground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
-					Render(line1) + "\n"
+					Background(subtleBg).
+					Render("▌")
 			} else {
-				leftContent += line1 + "\n"
+				linePrefix = " "
 			}
 
-			// Line 2: Status and Project
-			line2 := fmt.Sprintf("       %s • %s", issue.Status.Name, issue.Project.Name)
+			// Line 1: ID and Subject
+			line1 := linePrefix + idStyle.Render(fmt.Sprintf("#%d", issue.ID)) + " " + titleStyle.Render(issue.Subject)
 			if isSelected {
-				leftContent += lipgloss.NewStyle().
-					Foreground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
-					Render(line2) + "\n"
-			} else {
-				leftContent += lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#888888")).
-					Render(line2) + "\n"
+				// Pad to full width for complete background
+				availableWidth := m.leftPane.Width
+				currentLen := len(fmt.Sprintf("#%d %s", issue.ID, issue.Subject)) + 1
+				if currentLen < availableWidth {
+					line1 += lipgloss.NewStyle().Background(lipgloss.Color("#2A2A3A")).Render(strings.Repeat(" ", availableWidth-currentLen))
+				}
 			}
+			leftContent += line1 + "\n"
+
+			// Line 2: Status and Project
+			line2 := linePrefix + statusStyle.Render(issue.Status.Name) + " • " + projectStyle.Render(issue.Project.Name)
+			if isSelected {
+				availableWidth := m.leftPane.Width
+				currentLen := len(issue.Status.Name) + 3 + len(issue.Project.Name) + 1
+				if currentLen < availableWidth {
+					line2 += lipgloss.NewStyle().Background(lipgloss.Color("#2A2A3A")).Render(strings.Repeat(" ", availableWidth-currentLen))
+				}
+			}
+			leftContent += line2 + "\n"
 
 			// Line 3: Assignee
 			assignee := "Unassigned"
 			if issue.AssignedTo != nil {
 				assignee = issue.AssignedTo.Name
 			}
-			line3 := fmt.Sprintf("       → %s", assignee)
+			line3 := linePrefix + assigneeStyle.Render("→ "+assignee)
 			if isSelected {
-				leftContent += lipgloss.NewStyle().
-					Foreground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
-					Render(line3) + "\n"
-			} else {
-				leftContent += lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#888888")).
-					Render(line3) + "\n"
+				availableWidth := m.leftPane.Width
+				currentLen := len("→ "+assignee) + 1
+				if currentLen < availableWidth {
+					line3 += lipgloss.NewStyle().Background(lipgloss.Color("#2A2A3A")).Render(strings.Repeat(" ", availableWidth-currentLen))
+				}
 			}
+			leftContent += line3 + "\n"
 
 			// Blank line between issues
 			leftContent += "\n"
