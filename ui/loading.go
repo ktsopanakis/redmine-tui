@@ -162,7 +162,9 @@ func (m LoadingModel) View() string {
 		}
 	}
 
-	return style.Render(b.String())
+	// Remove trailing newline
+	output := strings.TrimSuffix(b.String(), "\n")
+	return style.Render(output)
 }
 
 func (m *LoadingModel) Hide() {

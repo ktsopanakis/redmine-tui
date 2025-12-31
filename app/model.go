@@ -270,6 +270,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if we're in any input mode - if so, only handle esc, enter, and pass to input
 		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode
 
+		// Handle filter mode input FIRST - allow all keys to be typed
+		if m.filterMode {
+			switch msg.String() {
+			case "esc":
+				// Exit filter mode
+				m.filterMode = false
+				m.filterInput.Blur()
+				// Clear filter
+				m.filterText = ""
+				m.filterInput.SetValue("")
+				m.selectedIndex = 0
+				m.updatePaneContent()
+				return m, nil
+			case "enter":
+				// Accept filter and exit filter mode
+				m.filterMode = false
+				m.filterInput.Blur()
+				m.filterText = m.filterInput.Value()
+				m.selectedIndex = 0
+				m.updatePaneContent()
+				return m, nil
+			default:
+				// Pass all other keys to filter input
+				m.filterInput, cmd = m.filterInput.Update(msg)
+				cmds = append(cmds, cmd)
+				// Update filter text and re-render on each keystroke
+				m.filterText = m.filterInput.Value()
+				m.selectedIndex = 0
+				m.updatePaneContent()
+				return m, tea.Batch(cmds...)
+			}
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			if m.editMode && m.hasUnsavedChanges {
@@ -301,16 +334,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pendingEdits = make(map[string]string)
 				m.originalValues = make(map[string]string)
 				m.editInput.Blur()
-				m.updatePaneContent()
-				return m, nil
-			} else if m.filterMode {
-				// Exit filter mode
-				m.filterMode = false
-				m.filterInput.Blur()
-				// Clear filter
-				m.filterText = ""
-				m.filterInput.SetValue("")
-				m.selectedIndex = 0
 				m.updatePaneContent()
 				return m, nil
 			} else if m.userInputMode != "" {
@@ -725,16 +748,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.hasUnsavedChanges = (len(m.pendingEdits) > 0 || currentFieldChanged)
 				// Update pane immediately to show changes
 				m.updatePaneContent()
-			} else if inInputMode {
+			} else if m.userInputMode == "user" || m.userInputMode == "project" {
+				// Handle user/project input mode
 				m.filterInput, cmd = m.filterInput.Update(msg)
 				cmds = append(cmds, cmd)
-				// Update list filter text when in list mode
-				if m.userInputMode == "user" || m.userInputMode == "project" {
-					m.listFilterText = m.filterInput.Value()
-					// Rebuild filtered indices immediately
-					m.buildFilteredList()
-				}
-			} else {
+				m.listFilterText = m.filterInput.Value()
+				// Rebuild filtered indices immediately
+				m.buildFilteredList()
+			} else if !inInputMode {
 				// Handle command keys when NOT in input mode
 				switch msg.String() {
 				case "e":
