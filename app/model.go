@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -134,6 +133,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadingIndicator.Hide()
 			return m, nil
 		}
+		// Mark "Initializing application" as complete
+		cmds = append(cmds, ui.SendLoadingCompleteMsg())
+		
 		m.issues = msg.issues
 		if len(m.issues) > 0 {
 			m.selectedIndex = 0
@@ -162,13 +164,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.ready {
 				m.updatePaneContent()
 			}
-			// Mark as complete and hide loading indicator after first issue details loaded
+			// Mark as complete
 			cmds = append(cmds, ui.SendLoadingCompleteMsg())
-
-			// Hide the entire indicator after a short delay
-			cmds = append(cmds, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-				return hideLoadingMsg{}
-			}))
 		}
 		return m, tea.Batch(cmds...)
 
