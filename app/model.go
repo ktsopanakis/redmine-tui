@@ -291,6 +291,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedIndex = 0
 				m.updatePaneContent()
 				return m, nil
+			case "up":
+				// Navigate up through filtered issues
+				filteredIssues := m.getFilteredIssues()
+				if len(filteredIssues) > 0 && m.selectedIndex > 0 {
+					m.selectedIndex--
+					m.updatePaneContent()
+					cmds = append(cmds, fetchIssueDetail(m.client, filteredIssues[m.selectedIndex].ID))
+				}
+				return m, tea.Batch(cmds...)
+			case "down":
+				// Navigate down through filtered issues
+				filteredIssues := m.getFilteredIssues()
+				if len(filteredIssues) > 0 && m.selectedIndex < len(filteredIssues)-1 {
+					m.selectedIndex++
+					m.updatePaneContent()
+					cmds = append(cmds, fetchIssueDetail(m.client, filteredIssues[m.selectedIndex].ID))
+				}
+				return m, tea.Batch(cmds...)
 			default:
 				// Pass all other keys to filter input
 				m.filterInput, cmd = m.filterInput.Update(msg)
