@@ -2,40 +2,72 @@
 
 set -euo pipefail
 
-GH_REPO="https://github.com/ktsopanakis/redmine-tui"
+GH_REPO="ktsopanakis/redmine-tui"
 TOOL_NAME="redmine-tui"
+
+# Detect OS and architecture
+get_platform() {
+  local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+  local arch=$(uname -m)
+  
+  # Normalize OS name
+  case "$os" in
+    linux) os="linux" ;;
+    darwin) os="darwin" ;;
+    mingw*|msys*|cygwin*) os="windows" ;;
+    *) echo "Unsupported OS: $os" >&2; exit 1 ;;
+  esac
+  
+  # Normalize architecture
+  case "$arch" in
+    x86_64|amd64) arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+  esac
+  
+  echo "${os}-${arch}"
+}
 
 install_version() {
   local version="$1"
   local install_path="$2"
-
   local bin_path="${install_path}/bin"
-  mkdir -p "${bin_path}"
-
-  echo "Installing ${TOOL_NAME} ${version}..."
-
-  # Clone the specific version
-  local tmp_dir
-  tmp_dir=$(mktemp -d)
   
-  git clone --depth 1 --branch "v${version}" "${GH_REPO}" "${tmp_dir}" || {
-    echo "Failed to clone ${GH_REPO} at version v${version}"
-    rm -rf "${tmp_dir}"
-    exit 1
-  }
-
-  # Build with Go
-  (
-    cd "${tmp_dir}"
-    go build -o "${bin_path}/${TOOL_NAME}" || {
-      echo "Failed to build ${TOOL_NAME}"
+  mkdir -p "${bin_path}"
+  
+  echo "Installing ${TOOL_NAME} ${version}..."
+  
+  local platform
+  platform=$(get_platform)
+  
+  local binary_name="${TOOL_NAME}-${platform}"
+  if [[ "$platform" == "windows-"* ]]; then
+    binary_name="${binary_name}.exe"
+  fi
+  
+  local download_url="https://github.com/${GH_REPO}/releases/download/v${version}/${binary_name}"
+  
+  echo "Downloading from: ${download_url}"
+  
+  # Download the binary
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "${download_url}" -o "${bin_path}/${TOOL_NAME}" || {
+      echo "Failed to download ${binary_name} from ${download_url}"
       exit 1
     }
-  )
-
-  # Cleanup
-  rm -rf "${tmp_dir}"
-
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q "${download_url}" -O "${bin_path}/${TOOL_NAME}" || {
+      echo "Failed to download ${binary_name} from ${download_url}"
+      exit 1
+    }
+  else
+    echo "Neither curl nor wget found. Please install one of them."
+    exit 1
+  fi
+  
+  # Make it executable
+  chmod +x "${bin_path}/${TOOL_NAME}"
+  
   echo "${TOOL_NAME} ${version} installed successfully!"
 }
 
