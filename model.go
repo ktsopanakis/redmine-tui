@@ -283,6 +283,7 @@ func (m *model) updatePaneContent() {
 			assigneeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C678DD")) // Purple
 
 			var linePrefix string
+			spacerStyle := lipgloss.NewStyle() // For spaces/dots between elements
 			if isSelected {
 				// Subtle background tint + bold for selection
 				subtleBg := lipgloss.Color("#2A2A3A") // Dark subtle background
@@ -291,6 +292,7 @@ func (m *model) updatePaneContent() {
 				statusStyle = statusStyle.Background(subtleBg).Bold(true)
 				projectStyle = projectStyle.Background(subtleBg).Bold(true)
 				assigneeStyle = assigneeStyle.Background(subtleBg).Bold(true)
+				spacerStyle = spacerStyle.Background(subtleBg) // Apply background to spacers too
 				linePrefix = lipgloss.NewStyle().
 					Foreground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
 					Background(subtleBg).
@@ -300,24 +302,24 @@ func (m *model) updatePaneContent() {
 			}
 
 			// Line 1: ID and Subject
-			line1 := linePrefix + idStyle.Render(fmt.Sprintf("#%d", issue.ID)) + " " + titleStyle.Render(issue.Subject)
+			line1 := linePrefix + idStyle.Render(fmt.Sprintf("#%d", issue.ID)) + spacerStyle.Render(" ") + titleStyle.Render(issue.Subject)
 			if isSelected {
 				// Pad to full width for complete background
 				availableWidth := m.leftPane.Width
 				currentLen := len(fmt.Sprintf("#%d %s", issue.ID, issue.Subject)) + 1
 				if currentLen < availableWidth {
-					line1 += lipgloss.NewStyle().Background(lipgloss.Color("#2A2A3A")).Render(strings.Repeat(" ", availableWidth-currentLen))
+					line1 += spacerStyle.Render(strings.Repeat(" ", availableWidth-currentLen))
 				}
 			}
 			leftContent += line1 + "\n"
 
 			// Line 2: Status and Project
-			line2 := linePrefix + statusStyle.Render(issue.Status.Name) + " • " + projectStyle.Render(issue.Project.Name)
+			line2 := linePrefix + statusStyle.Render(issue.Status.Name) + spacerStyle.Render(" • ") + projectStyle.Render(issue.Project.Name)
 			if isSelected {
 				availableWidth := m.leftPane.Width
 				currentLen := len(issue.Status.Name) + 3 + len(issue.Project.Name) + 1
 				if currentLen < availableWidth {
-					line2 += lipgloss.NewStyle().Background(lipgloss.Color("#2A2A3A")).Render(strings.Repeat(" ", availableWidth-currentLen))
+					line2 += spacerStyle.Render(strings.Repeat(" ", availableWidth-currentLen))
 				}
 			}
 			leftContent += line2 + "\n"
@@ -330,9 +332,9 @@ func (m *model) updatePaneContent() {
 			line3 := linePrefix + assigneeStyle.Render("→ "+assignee)
 			if isSelected {
 				availableWidth := m.leftPane.Width
-				currentLen := len("→ "+assignee) + 1
+				currentLen := len("→ "+assignee) - 1
 				if currentLen < availableWidth {
-					line3 += lipgloss.NewStyle().Background(lipgloss.Color("#2A2A3A")).Render(strings.Repeat(" ", availableWidth-currentLen))
+					line3 += spacerStyle.Render(strings.Repeat(" ", availableWidth-currentLen))
 				}
 			}
 			leftContent += line3 + "\n"
