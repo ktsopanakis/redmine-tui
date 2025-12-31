@@ -88,20 +88,20 @@ func InitialModel() Model {
 	editInput.Width = 50
 
 	return Model{
-		leftTitle:         "Issues",
-		rightTitle:        "Details",
-		activePane:        0,
-		client:            client,
-		selectedIndex:     0,
-		loading:           true,
-		filterInput:       filterInput,
-		editInput:         editInput,
-		viewMode:          "my",
-		selectedUsers:     make(map[int]bool),
-		selectedProjects:  make(map[int]bool),
-		editMode:          false,
-		editFieldIndex:    0,
-		loadingIndicator:  ui.NewLoadingModel(),
+		leftTitle:        "Issues",
+		rightTitle:       "Details",
+		activePane:       0,
+		client:           client,
+		selectedIndex:    0,
+		loading:          true,
+		filterInput:      filterInput,
+		editInput:        editInput,
+		viewMode:         "my",
+		selectedUsers:    make(map[int]bool),
+		selectedProjects: make(map[int]bool),
+		editMode:         false,
+		editFieldIndex:   0,
+		loadingIndicator: ui.NewLoadingModel(),
 	}
 }
 
@@ -430,10 +430,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterInput.Blur()
 				m.loading = true
 				m.selectedIndex = 0
-			return m, tea.Batch(
-				ui.SendLoadingMsg("Fetching filtered issues..."),
-				fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
-			)
+				return m, tea.Batch(
+					ui.SendLoadingMsg("Fetching filtered issues..."),
+					fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+				)
 			} else if m.userInputMode == "project" {
 				// Apply selected projects - use client-side filtering for multiple projects
 				selectedProjectIDs := []int{}
@@ -483,10 +483,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterInput.Blur()
 				m.loading = true
 				m.selectedIndex = 0
-			return m, tea.Batch(
-				ui.SendLoadingMsg("Fetching project issues..."),
-				fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
-			)
+				return m, tea.Batch(
+					ui.SendLoadingMsg("Fetching project issues..."),
+					fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+				)
 			} else if !inInputMode {
 				// Open selected issue in browser or show details
 				filteredIssues := m.getFilteredIssues()
