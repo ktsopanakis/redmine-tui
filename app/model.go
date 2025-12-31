@@ -66,8 +66,8 @@ type Model struct {
 	originalValues      map[string]string // fieldName -> original value for comparison
 
 	// Modal state
-	showModal     bool   // whether a modal is currently displayed
-	modalType     string // type of modal: "help", etc.
+	showModal bool   // whether a modal is currently displayed
+	modalType string // type of modal: "help", etc.
 }
 
 func InitialModel() Model {

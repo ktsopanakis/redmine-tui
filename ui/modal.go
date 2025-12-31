@@ -20,7 +20,7 @@ type ModalConfig struct {
 func RenderModal(cfg ModalConfig) string {
 	// Build content
 	var content strings.Builder
-	
+
 	// Add title
 	if cfg.Title != "" {
 		titleStyle := lipgloss.NewStyle().
@@ -29,7 +29,7 @@ func RenderModal(cfg ModalConfig) string {
 		content.WriteString(titleStyle.Render(cfg.Title) + "\n")
 		content.WriteString(strings.Repeat("─", 60) + "\n\n")
 	}
-	
+
 	// Add content lines
 	for _, line := range cfg.Content {
 		content.WriteString(line + "\n")
@@ -55,30 +55,30 @@ func RenderModal(cfg ModalConfig) string {
 func centerModal(box string, containerWidth, containerHeight int) string {
 	boxHeight := lipgloss.Height(box)
 	boxWidth := lipgloss.Width(box)
-	
+
 	// Calculate padding
 	horizontalPadding := (containerWidth - boxWidth) / 2
 	if horizontalPadding < 0 {
 		horizontalPadding = 0
 	}
-	
+
 	verticalPadding := (containerHeight - boxHeight) / 2
 	if verticalPadding < 0 {
 		verticalPadding = 0
 	}
 
 	var result strings.Builder
-	
+
 	// Top padding
 	for i := 0; i < verticalPadding; i++ {
 		result.WriteString("\n")
 	}
-	
+
 	// Add the box with horizontal padding
 	boxLines := strings.Split(box, "\n")
 	for _, line := range boxLines {
 		result.WriteString(strings.Repeat(" ", horizontalPadding) + line + "\n")
 	}
-	
+
 	return result.String()
 }
