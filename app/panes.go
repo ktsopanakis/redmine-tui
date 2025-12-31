@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/ktsopanakis/redmine-tui/config"
 )
 
-func (m *model) updatePaneContent() {
+func (m *Model) updatePaneContent() {
 	if !m.ready {
 		return
 	}

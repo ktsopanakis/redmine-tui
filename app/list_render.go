@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ type filteredListItem struct {
 }
 
 // buildFilteredList creates a filtered list with proper indexing
-func (m *model) buildFilteredList() []filteredListItem {
+func (m *Model) buildFilteredList() []filteredListItem {
 	var items []filteredListItem
 	m.filteredIndices = []int{} // Reset filtered indices
 
@@ -143,7 +143,7 @@ func (m *model) buildFilteredList() []filteredListItem {
 }
 
 // renderListOverlay renders the user/project selection list overlay
-func (m model) renderListOverlay() string {
+func (m Model) renderListOverlay() string {
 	var title string
 	var items []filteredListItem
 
@@ -262,7 +262,7 @@ func (m model) renderListOverlay() string {
 }
 
 // positionAtBottom positions a box at the bottom of the screen
-func (m model) positionAtBottom(box string) string {
+func (m Model) positionAtBottom(box string) string {
 	boxHeight := lipgloss.Height(box)
 	boxWidth := lipgloss.Width(box)
 	horizontalPadding := (m.width - boxWidth) / 2

@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ type EditableField struct {
 	DisplayName string
 	Type        string // "text", "number", "select", "date", "multiline"
 	GetValue    func(*api.Issue) string
-	GetOptions  func(*model) []string // for select fields
+	GetOptions  func(*Model) []string // for select fields
 }
 
 // Define editable fields
@@ -39,7 +39,7 @@ var editableFields = []EditableField{
 		DisplayName: "Status",
 		Type:        "select",
 		GetValue:    func(i *api.Issue) string { return i.Status.Name },
-		GetOptions: func(m *model) []string {
+		GetOptions: func(m *Model) []string {
 			options := []string{}
 			for _, s := range m.availableStatuses {
 				options = append(options, s.Name)
@@ -52,7 +52,7 @@ var editableFields = []EditableField{
 		DisplayName: "Priority",
 		Type:        "select",
 		GetValue:    func(i *api.Issue) string { return i.Priority.Name },
-		GetOptions: func(m *model) []string {
+		GetOptions: func(m *Model) []string {
 			options := []string{}
 			for _, p := range m.availablePriorities {
 				options = append(options, p.Name)
@@ -70,7 +70,7 @@ var editableFields = []EditableField{
 			}
 			return "Unassigned"
 		},
-		GetOptions: func(m *model) []string {
+		GetOptions: func(m *Model) []string {
 			options := []string{"Unassigned"}
 			for _, u := range m.availableUsers {
 				displayName := u.Name
@@ -131,7 +131,7 @@ func fetchPriorities(client *api.Client) tea.Cmd {
 	}
 }
 
-func updateIssue(client *api.Client, issueID int, field EditableField, value string, m *model) tea.Cmd {
+func updateIssue(client *api.Client, issueID int, field EditableField, value string, m *Model) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(map[string]interface{})
 
@@ -195,7 +195,7 @@ func updateIssue(client *api.Client, issueID int, field EditableField, value str
 }
 
 // updateIssueMultiple sends all pending edits to the API in one request
-func updateIssueMultiple(client *api.Client, issueID int, pendingEdits map[string]string, m model) tea.Cmd {
+func updateIssueMultiple(client *api.Client, issueID int, pendingEdits map[string]string, m Model) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(map[string]interface{})
 
@@ -263,7 +263,7 @@ func updateIssueMultiple(client *api.Client, issueID int, pendingEdits map[strin
 }
 
 // renderEditFooter renders the footer when in edit mode
-func (m model) renderEditFooter() string {
+func (m Model) renderEditFooter() string {
 	if !m.editMode || len(editableFields) == 0 {
 		return ""
 	}

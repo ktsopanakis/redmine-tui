@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ const (
 	footerHeight = 1
 )
 
-type model struct {
+type Model struct {
 	ready               bool
 	width               int
 	height              int
@@ -67,7 +67,7 @@ type model struct {
 	originalValues      map[string]string // fieldName -> original value for comparison
 }
 
-func initialModel() model {
+func InitialModel() Model {
 	client := api.NewClient(config.Current.Redmine.URL, config.Current.Redmine.APIKey)
 	filterInput := textinput.New()
 	filterInput.Placeholder = "Type to filter issues..."
@@ -79,7 +79,7 @@ func initialModel() model {
 	editInput.CharLimit = 500
 	editInput.Width = 50
 
-	return model{
+	return Model{
 		leftTitle:        "Issues",
 		rightTitle:       "Details",
 		activePane:       0,
@@ -96,11 +96,11 @@ func initialModel() model {
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (m Model) Init() tea.Cmd {
 	return tea.Batch(fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues), fetchCurrentUser(m.client), tickCmd())
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 

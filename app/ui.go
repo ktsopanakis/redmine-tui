@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -8,9 +8,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ktsopanakis/redmine-tui/config"
+	appui "github.com/ktsopanakis/redmine-tui/ui"
 )
 
-func (m model) View() string {
+func (m Model) View() string {
 	if !m.ready {
 		return "\n  Initializing..."
 	}
@@ -221,31 +222,16 @@ func (m model) View() string {
 	// Footer with adaptive options
 	var footer string
 	if m.filterMode {
-		// Show filter input in footer
-		filterPrompt := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#61AFEF")).
-			Bold(true).
-			Render("Filter: ")
-		footer = footerStyle.Width(m.width).Render(filterPrompt + m.filterInput.View())
+		footer = appui.RenderPromptFooter("Filter: ", m.filterInput.View(), m.width, "#61AFEF")
 	} else if m.editMode {
-		// Show edit mode footer
-		footer = footerStyle.Width(m.width).Render(m.renderEditFooter())
+		footer = appui.RenderFooter(m.renderEditFooter(), m.width)
 	} else if m.userInputMode == "user" {
-		// Show user filter input in footer
-		userPrompt := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#61AFEF")).
-			Bold(true).
-			Render("Filter Users: ")
-		footer = footerStyle.Width(m.width).Render(userPrompt + m.filterInput.View())
+		footer = appui.RenderPromptFooter("Filter Users: ", m.filterInput.View(), m.width, "#61AFEF")
 	} else if m.userInputMode == "project" {
-		// Show project filter input in footer
-		projectPrompt := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#98C379")).
-			Bold(true).
-			Render("Filter Projects: ")
-		footer = footerStyle.Width(m.width).Render(projectPrompt + m.filterInput.View())
+		footer = appui.RenderPromptFooter("Filter Projects: ", m.filterInput.View(), m.width, "#98C379")
 	} else {
-		footer = footerStyle.Width(m.width).Render(m.getFooterText())
+		menuText := appui.BuildAdaptiveMenu(m.getFooterItems(), m.width-2, " | ")
+		footer = appui.RenderFooter(menuText, m.width)
 	}
 
 	// Combine all sections
@@ -257,58 +243,20 @@ func (m model) View() string {
 	)
 }
 
-// getFooterText returns footer text that adapts to available width
-func (m model) getFooterText() string {
-	items := []string{
-		"Tab: Switch",
-		"↑↓/jk: Scroll",
-		"PgUp/PgDn: Page",
-		"f: Filter",
-		"m: My/All",
-		"u: User",
-		"p: Project",
-		"e: Edit",
-		"Esc: Clear",
-		"?: Help",
-		"q: Quit",
+// getFooterItems returns footer menu items with required status
+func (m Model) getFooterItems() []appui.FooterItem {
+	return []appui.FooterItem{
+		{Text: "↑↓/jk: Nav", Required: false},
+		{Text: "Tab: Switch", Required: false},
+		{Text: "f: Filter", Required: true},
+		{Text: "m: My/All", Required: true},
+		{Text: "e: Edit", Required: true},
+		{Text: "q: Quit", Required: true},
 	}
-
-	required := []string{"f: Filter", "m: My/All", "e: Edit", "q: Quit"}
-
-	text := ""
-	for _, item := range items {
-		testText := text
-		if testText != "" {
-			testText += " | "
-		}
-		testText += item
-
-		// Check if adding this item would exceed width
-		// Measure plain text width (not styled)
-		if len(testText) > m.width-2 {
-			isRequired := false
-			for _, req := range required {
-				if item == req {
-					isRequired = true
-					break
-				}
-			}
-			if !isRequired {
-				continue
-			}
-		}
-
-		if text != "" {
-			text += " | "
-		}
-		text += item
-	}
-
-	return text
 }
 
 // overlayListOnPanes overlays the list selection on top of the panes
-func (m model) overlayListOnPanes(panes, listOverlay string) string {
+func (m Model) overlayListOnPanes(panes, listOverlay string) string {
 	panesLines := strings.Split(panes, "\n")
 	overlayLines := strings.Split(listOverlay, "\n")
 

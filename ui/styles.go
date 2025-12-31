@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"github.com/charmbracelet/lipgloss"
@@ -7,30 +7,30 @@ import (
 )
 
 var (
-	headerStyle     lipgloss.Style
-	footerStyle     lipgloss.Style
-	paneStyle       lipgloss.Style
-	activePaneStyle lipgloss.Style
+	HeaderStyle     lipgloss.Style
+	FooterStyle     lipgloss.Style
+	PaneStyle       lipgloss.Style
+	ActivePaneStyle lipgloss.Style
 )
 
-func initStyles() {
-	headerStyle = lipgloss.NewStyle().
+func InitStyles() {
+	HeaderStyle = lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(config.Current.Colors.HeaderText)).
 		Background(lipgloss.Color(config.Current.Colors.HeaderBackground)).
 		PaddingLeft(1)
 
-	footerStyle = lipgloss.NewStyle().
+	FooterStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color(config.Current.Colors.FooterText)).
 		Background(lipgloss.Color(config.Current.Colors.FooterBackground)).
 		PaddingLeft(1)
 
-	paneStyle = lipgloss.NewStyle().
+	PaneStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(config.Current.Colors.InactivePaneBorder)).
 		Padding(0, 1)
 
-	activePaneStyle = lipgloss.NewStyle().
+	ActivePaneStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(config.Current.Colors.ActivePaneBorder)).
 		Padding(0, 1)

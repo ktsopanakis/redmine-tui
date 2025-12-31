@@ -7,7 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ktsopanakis/redmine-tui/app"
 	"github.com/ktsopanakis/redmine-tui/config"
+	"github.com/ktsopanakis/redmine-tui/ui"
 )
 
 func main() {
@@ -64,7 +66,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	initStyles()
+	ui.InitStyles()
 
 	// Build program options
 	var opts []tea.ProgramOption
@@ -73,7 +75,7 @@ func main() {
 	}
 
 	p := tea.NewProgram(
-		initialModel(),
+		app.InitialModel(),
 		opts...,
 	)
 

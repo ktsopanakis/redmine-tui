@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 )
 
 // getFilteredIssues returns issues filtered by current filters
-func (m *model) getFilteredIssues() []api.Issue {
+func (m *Model) getFilteredIssues() []api.Issue {
 	// First apply multi-user and/or multi-project filters if set
 	filteredBySelection := m.issues
 
