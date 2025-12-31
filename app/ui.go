@@ -96,6 +96,14 @@ func (m Model) View() string {
 		}
 	}
 
+	// If loading indicator is visible, overlay it in top-right corner
+	if m.loadingIndicator.Visible {
+		loadingView := m.loadingIndicator.View()
+		if loadingView != "" {
+			panes = appui.OverlayInCorner(panes, loadingView, m.width, "top-right")
+		}
+	}
+
 	// Footer with adaptive options
 	var footer string
 	if m.filterMode {

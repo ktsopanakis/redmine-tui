@@ -10,6 +10,7 @@ import (
 
 	"github.com/ktsopanakis/redmine-tui/api"
 	"github.com/ktsopanakis/redmine-tui/config"
+	"github.com/ktsopanakis/redmine-tui/ui"
 )
 
 const (
@@ -69,6 +70,9 @@ type Model struct {
 	showModal   bool   // whether a modal is currently displayed
 	modalType   string // type of modal: "help", etc.
 	modalScroll int    // scroll position in modal content
+
+	// Loading indicator
+	loadingIndicator ui.LoadingModel
 }
 
 func InitialModel() Model {
@@ -84,41 +88,56 @@ func InitialModel() Model {
 	editInput.Width = 50
 
 	return Model{
-		leftTitle:        "Issues",
-		rightTitle:       "Details",
-		activePane:       0,
-		client:           client,
-		selectedIndex:    0,
-		loading:          true,
-		filterInput:      filterInput,
-		editInput:        editInput,
-		viewMode:         "my",
-		selectedUsers:    make(map[int]bool),
-		selectedProjects: make(map[int]bool),
-		editMode:         false,
-		editFieldIndex:   0,
+		leftTitle:         "Issues",
+		rightTitle:        "Details",
+		activePane:        0,
+		client:            client,
+		selectedIndex:     0,
+		loading:           true,
+		filterInput:       filterInput,
+		editInput:         editInput,
+		viewMode:          "my",
+		selectedUsers:     make(map[int]bool),
+		selectedProjects:  make(map[int]bool),
+		editMode:          false,
+		editFieldIndex:    0,
+		loadingIndicator:  ui.NewLoadingModel(),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues), fetchCurrentUser(m.client), tickCmd())
+	return tea.Batch(
+		m.loadingIndicator.Init(),
+		ui.SendLoadingMsg("Initializing application..."),
+		ui.SendLoadingMsg("Fetching issues..."),
+		fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+		ui.SendLoadingMsg("Fetching current user..."),
+		fetchCurrentUser(m.client),
+		tickCmd(),
+	)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
+	// Update loading indicator
+	m.loadingIndicator, cmd = m.loadingIndicator.Update(msg)
+	cmds = append(cmds, cmd)
+
 	switch msg := msg.(type) {
 	case issuesLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err
+			m.loadingIndicator.Hide()
 			return m, nil
 		}
 		m.issues = msg.issues
 		if len(m.issues) > 0 {
 			m.selectedIndex = 0
 			// Fetch details for first issue
+			cmds = append(cmds, ui.SendLoadingMsg("Fetching issue details..."))
 			cmds = append(cmds, fetchIssueDetail(m.client, m.issues[0].ID))
 		}
 		// Update panes with content if ready
@@ -139,6 +158,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.ready {
 				m.updatePaneContent()
 			}
+			// Hide loading indicator after first issue details loaded
+			m.loadingIndicator.Hide()
 		}
 		return m, nil
 
@@ -187,7 +208,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			// Refresh the issue list and details
 			return m, tea.Batch(
+				ui.SendLoadingMsg("Refreshing issues..."),
 				fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+				ui.SendLoadingMsg("Fetching updated issue..."),
 				fetchIssueDetail(m.client, msg.issueID),
 			)
 		}
@@ -200,6 +223,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.loadingIndicator.SetSize(msg.Width, msg.Height)
 
 		if !m.ready {
 			paneWidth := (msg.Width / 3) - 4
@@ -406,7 +430,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterInput.Blur()
 				m.loading = true
 				m.selectedIndex = 0
-				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
+			return m, tea.Batch(
+				ui.SendLoadingMsg("Fetching filtered issues..."),
+				fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+			)
 			} else if m.userInputMode == "project" {
 				// Apply selected projects - use client-side filtering for multiple projects
 				selectedProjectIDs := []int{}
@@ -456,7 +483,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterInput.Blur()
 				m.loading = true
 				m.selectedIndex = 0
-				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
+			return m, tea.Batch(
+				ui.SendLoadingMsg("Fetching project issues..."),
+				fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+			)
 			} else if !inInputMode {
 				// Open selected issue in browser or show details
 				filteredIssues := m.getFilteredIssues()
@@ -711,12 +741,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Load statuses and priorities if not already loaded
 						var cmds []tea.Cmd
 						if len(m.availableStatuses) == 0 {
+							cmds = append(cmds, ui.SendLoadingMsg("Fetching statuses..."))
 							cmds = append(cmds, fetchStatuses(m.client))
 						}
 						if len(m.availablePriorities) == 0 {
+							cmds = append(cmds, ui.SendLoadingMsg("Fetching priorities..."))
 							cmds = append(cmds, fetchPriorities(m.client))
 						}
 						if len(m.availableUsers) == 0 {
+							cmds = append(cmds, ui.SendLoadingMsg("Fetching users..."))
 							cmds = append(cmds, fetchUsers(m.client))
 						}
 
@@ -749,7 +782,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.loading = true
 					m.selectedIndex = 0
-					return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
+					return m, tea.Batch(
+						ui.SendLoadingMsg("Fetching issues..."),
+						fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+					)
 				case "u":
 					// Enter user selection mode
 					m.userInputMode = "user"
@@ -759,7 +795,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterInput.SetValue("")
 					m.filterInput.Placeholder = "Type to filter users..."
 					m.filterInput.Focus()
-					return m, tea.Batch(fetchUsers(m.client), textinput.Blink)
+					return m, tea.Batch(
+						ui.SendLoadingMsg("Fetching users list..."),
+						fetchUsers(m.client),
+						textinput.Blink,
+					)
 				case "p":
 					// Enter project selection mode
 					m.userInputMode = "project"
@@ -769,7 +809,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterInput.SetValue("")
 					m.filterInput.Placeholder = "Type to filter projects..."
 					m.filterInput.Focus()
-					return m, tea.Batch(fetchProjects(m.client), textinput.Blink)
+					return m, tea.Batch(
+						ui.SendLoadingMsg("Fetching projects list..."),
+						fetchProjects(m.client),
+						textinput.Blink,
+					)
 				case "?":
 					m.showModal = !m.showModal
 					if m.showModal {

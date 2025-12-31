@@ -169,3 +169,79 @@ func centerModal(box string, containerWidth, containerHeight int) string {
 
 	return result.String()
 }
+
+// OverlayInCorner overlays content in a specific corner of the base content
+func OverlayInCorner(base, overlay string, width int, corner string) string {
+	baseLines := strings.Split(base, "\n")
+	overlayLines := strings.Split(overlay, "\n")
+
+	overlayWidth := 0
+	for _, line := range overlayLines {
+		lineWidth := lipgloss.Width(line)
+		if lineWidth > overlayWidth {
+			overlayWidth = lineWidth
+		}
+	}
+
+	overlayHeight := len(overlayLines)
+
+	// Calculate position based on corner
+	var startRow, startCol int
+	switch corner {
+	case "top-right":
+		startRow = 1 // Leave 1 line for header
+		startCol = width - overlayWidth - 2
+	case "top-left":
+		startRow = 1
+		startCol = 2
+	case "bottom-right":
+		startRow = len(baseLines) - overlayHeight - 2
+		startCol = width - overlayWidth - 2
+	case "bottom-left":
+		startRow = len(baseLines) - overlayHeight - 2
+		startCol = 2
+	default:
+		// Default to top-right
+		startRow = 1
+		startCol = width - overlayWidth - 2
+	}
+
+	if startRow < 0 {
+		startRow = 0
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+
+	// Overlay the content
+	result := make([]string, len(baseLines))
+	copy(result, baseLines)
+
+	for i, overlayLine := range overlayLines {
+		row := startRow + i
+		if row >= len(result) {
+			break
+		}
+
+		baseLine := result[row]
+		baseRunes := []rune(baseLine)
+
+		// Handle ANSI codes properly by using lipgloss width
+		if startCol+lipgloss.Width(overlayLine) > len(baseRunes) {
+			// Extend base line if needed
+			baseRunes = append(baseRunes, []rune(strings.Repeat(" ", startCol+lipgloss.Width(overlayLine)-len(baseRunes)))...)
+		}
+
+		// Simple overlay - just replace the section
+		beforeOverlay := string(baseRunes[:startCol])
+		afterOverlay := ""
+		afterStart := startCol + lipgloss.Width(overlayLine)
+		if afterStart < len(baseRunes) {
+			afterOverlay = string(baseRunes[afterStart:])
+		}
+
+		result[row] = beforeOverlay + overlayLine + afterOverlay
+	}
+
+	return strings.Join(result, "\n")
+}
