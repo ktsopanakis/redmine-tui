@@ -58,8 +58,8 @@ type model struct {
 	editFieldIndex      int               // which field is currently selected for editing
 	editInput           textinput.Model   // input for editing
 	editingIssueID      int               // ID of the issue being edited
-	availableStatuses   []api.Status          // available statuses for selection
-	availablePriorities []api.Priority        // available priorities for selection
+	availableStatuses   []api.Status      // available statuses for selection
+	availablePriorities []api.Priority    // available priorities for selection
 	hasUnsavedChanges   bool              // whether there are unsaved changes in edit mode
 	editOriginalValue   string            // original value before editing
 	pendingEdits        map[string]string // fieldName -> new value for all pending edits
