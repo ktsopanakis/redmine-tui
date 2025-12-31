@@ -73,4 +73,3 @@ func (m *model) getFilteredIssues() []Issue {
 	}
 	return filtered
 }
-

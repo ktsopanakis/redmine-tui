@@ -149,4 +149,3 @@ func fetchProjects(client *Client) tea.Cmd {
 		return projectsLoadedMsg{projects: resp.Projects}
 	}
 }
-
