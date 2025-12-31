@@ -14,18 +14,70 @@ func (m model) View() string {
 	}
 
 	// Header
-	currentTime := time.Now().Format("2006-01-02 15:04:05")
-	// Use icon and lighter text colors that will be visible on background
-	headerLeft := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Render("◆ ") +
-		lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B")).Render(settings.Redmine.URL)
-	headerRight := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379")).Render(currentTime)
-	// Calculate spacing - account for icon (1 char + space)
-	plainLen := len(settings.Redmine.URL) + 2 + len(currentTime)
-	headerContent := headerLeft
-	if m.width > plainLen {
-		headerContent += strings.Repeat(" ", m.width-plainLen) + headerRight
+	now := time.Now()
+	dayOfWeek := now.Format("Monday")
+	dateTime := now.Format("2006-01-02 15:04:05")
+	
+	// Build header with background on each element to preserve colors
+	bg := lipgloss.Color(settings.Colors.HeaderBackground)
+	
+	icon := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Background(bg).
+		Bold(true).
+		Render("◆")
+	
+	space := lipgloss.NewStyle().Background(bg).Render(" ")
+	
+	// More contrasty yellow for URL
+	url := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFD700")).
+		Background(bg).
+		Bold(true).
+		Render(settings.Redmine.URL)
+	
+	// Build right side: username | day date time
+	username := ""
+	if m.currentUser != nil {
+		username = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#C678DD")).
+			Background(bg).
+			Render(m.currentUser.Name) + lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666")).
+			Background(bg).
+			Render(" | ")
 	}
-	header := headerStyle.Width(m.width).Render(headerContent)
+	
+	day := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#61AFEF")).
+		Background(bg).
+		Render(dayOfWeek)
+	
+	timeDisplay := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#98C379")).
+		Background(bg).
+		Render(" " + dateTime)
+	
+	rightSide := username + day + timeDisplay
+	
+	// Calculate spacing
+	leftLen := 1 + 1 + len(settings.Redmine.URL)
+	rightLen := 0
+	if m.currentUser != nil {
+		rightLen = len(m.currentUser.Name) + 3 // name + " | "
+	}
+	rightLen += len(dayOfWeek) + 1 + len(dateTime) // day + space + datetime
+	
+	spacer := ""
+	if m.width > leftLen+rightLen+1 {
+		spacer = lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", m.width-leftLen-rightLen-1))
+	}
+	
+	header := lipgloss.NewStyle().
+		Background(bg).
+		PaddingLeft(1).
+		Width(m.width).
+		Render(icon + space + url + spacer + rightSide)
 
 	// Left pane with title embedded in border
 	leftBorderColor := lipgloss.Color(settings.Colors.InactivePaneBorder)

@@ -56,6 +56,7 @@ type model struct {
 	selectedDisplayLine int // Line number where selected issue is displayed
 	loading             bool
 	err                 error
+	currentUser         *User
 }
 
 func initialModel() model {
@@ -79,7 +80,10 @@ type issueDetailMsg struct {
 	issue *Issue
 	err   error
 }
-
+type currentUserMsg struct {
+	user *User
+	err  error
+}
 type tickMsg time.Time
 
 func fetchIssues(client *Client) tea.Cmd {
@@ -108,8 +112,18 @@ func tickCmd() tea.Cmd {
 	})
 }
 
+func fetchCurrentUser(client *Client) tea.Cmd {
+	return func() tea.Msg {
+		user, err := client.GetCurrentUser()
+		if err != nil {
+			return currentUserMsg{err: err}
+		}
+		return currentUserMsg{user: user}
+	}
+}
+
 func (m model) Init() tea.Cmd {
-	return tea.Batch(fetchIssues(m.client), tickCmd())
+	return tea.Batch(fetchIssues(m.client), fetchCurrentUser(m.client), tickCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -147,6 +161,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.ready {
 				m.updatePaneContent()
 			}
+		}
+		return m, nil
+
+	case currentUserMsg:
+		if msg.err == nil && msg.user != nil {
+			m.currentUser = msg.user
 		}
 		return m, nil
 

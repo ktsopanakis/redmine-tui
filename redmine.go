@@ -175,6 +175,24 @@ func (c *Client) GetIssue(id int) (*Issue, error) {
 	return &response.Issue, nil
 }
 
+// GetCurrentUser fetches the current user information
+func (c *Client) GetCurrentUser() (*User, error) {
+	path := "/users/current.json"
+	data, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		User User `json:"user"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, err
+	}
+
+	return &response.User, nil
+}
+
 // GetProjects fetches all projects
 func (c *Client) GetProjects(limit, offset int) (*ProjectsResponse, error) {
 	params := url.Values{}
