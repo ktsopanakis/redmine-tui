@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/ktsopanakis/redmine-tui/api"
 )
 
 // getFilteredIssues returns issues filtered by current filters
-func (m *model) getFilteredIssues() []Issue {
+func (m *model) getFilteredIssues() []api.Issue {
 	// First apply multi-user and/or multi-project filters if set
 	filteredBySelection := m.issues
 
@@ -32,7 +34,7 @@ func (m *model) getFilteredIssues() []Issue {
 
 	// Apply filters with AND logic when both are set
 	if userIDMap != nil || projectIDMap != nil {
-		var filtered []Issue
+		var filtered []api.Issue
 		for _, issue := range m.issues {
 			// Check user filter (OR across selected users)
 			userMatch := userIDMap == nil // If no user filter, pass this check
@@ -60,7 +62,7 @@ func (m *model) getFilteredIssues() []Issue {
 	}
 
 	filterLower := strings.ToLower(m.filterText)
-	filtered := []Issue{}
+	filtered := []api.Issue{}
 	for _, issue := range filteredBySelection {
 		// Search in ID, Subject, Status, Project, and Assignee
 		if strings.Contains(strings.ToLower(fmt.Sprintf("%d", issue.ID)), filterLower) ||

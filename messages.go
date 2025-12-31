@@ -6,32 +6,34 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/ktsopanakis/redmine-tui/api"
 )
 
 // Message types for Bubble Tea update loop
 
 type issuesLoadedMsg struct {
-	issues []Issue
+	issues []api.Issue
 	err    error
 }
 
 type issueDetailMsg struct {
-	issue *Issue
+	issue *api.Issue
 	err   error
 }
 
 type currentUserMsg struct {
-	user *User
+	user *api.User
 	err  error
 }
 
 type usersLoadedMsg struct {
-	users []User
+	users []api.User
 	err   error
 }
 
 type projectsLoadedMsg struct {
-	projects []Project
+	projects []api.Project
 	err      error
 }
 
@@ -39,9 +41,9 @@ type tickMsg time.Time
 
 // Fetch commands that return messages
 
-func fetchIssues(client *Client, viewMode string, assigneeFilter string, projectFilter string, issues []Issue) tea.Cmd {
+func fetchIssues(client *api.Client, viewMode string, assigneeFilter string, projectFilter string, issues []api.Issue) tea.Cmd {
 	return func() tea.Msg {
-		var resp *IssuesResponse
+		var resp *api.IssuesResponse
 		var err error
 
 		// Determine project ID if projectFilter is set
@@ -104,7 +106,7 @@ func fetchIssues(client *Client, viewMode string, assigneeFilter string, project
 	}
 }
 
-func fetchIssueDetail(client *Client, issueID int) tea.Cmd {
+func fetchIssueDetail(client *api.Client, issueID int) tea.Cmd {
 	return func() tea.Msg {
 		issue, err := client.GetIssue(issueID)
 		if err != nil {
@@ -120,7 +122,7 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-func fetchCurrentUser(client *Client) tea.Cmd {
+func fetchCurrentUser(client *api.Client) tea.Cmd {
 	return func() tea.Msg {
 		user, err := client.GetCurrentUser()
 		if err != nil {
@@ -130,7 +132,7 @@ func fetchCurrentUser(client *Client) tea.Cmd {
 	}
 }
 
-func fetchUsers(client *Client) tea.Cmd {
+func fetchUsers(client *api.Client) tea.Cmd {
 	return func() tea.Msg {
 		users, err := client.GetUsers(100, 0)
 		if err != nil {
@@ -140,7 +142,7 @@ func fetchUsers(client *Client) tea.Cmd {
 	}
 }
 
-func fetchProjects(client *Client) tea.Cmd {
+func fetchProjects(client *api.Client) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := client.GetProjects(100, 0)
 		if err != nil {

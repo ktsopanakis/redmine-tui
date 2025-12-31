@@ -7,6 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/ktsopanakis/redmine-tui/api"
 )
 
 const (
@@ -24,13 +26,13 @@ type model struct {
 	leftTitle           string
 	rightTitle          string
 	showHelp            bool
-	client              *Client
-	issues              []Issue
+	client              *api.Client
+	issues              []api.Issue
 	selectedIndex       int
 	selectedDisplayLine int // Line number where selected issue is displayed
 	loading             bool
 	err                 error
-	currentUser         *User
+	currentUser         *api.User
 	filterMode          bool
 	filterInput         textinput.Model
 	filterText          string
@@ -40,8 +42,8 @@ type model struct {
 	userInputMode       string // "", "user", "project" - which input is active
 
 	// List selection state
-	availableUsers       []User
-	availableProjects    []Project
+	availableUsers       []api.User
+	availableProjects    []api.Project
 	selectedUsers        map[int]bool   // user ID -> selected
 	selectedProjects     map[int]bool   // project ID -> selected
 	selectedUserNames    map[int]string // user ID -> display name
@@ -56,8 +58,8 @@ type model struct {
 	editFieldIndex      int               // which field is currently selected for editing
 	editInput           textinput.Model   // input for editing
 	editingIssueID      int               // ID of the issue being edited
-	availableStatuses   []Status          // available statuses for selection
-	availablePriorities []Priority        // available priorities for selection
+	availableStatuses   []api.Status          // available statuses for selection
+	availablePriorities []api.Priority        // available priorities for selection
 	hasUnsavedChanges   bool              // whether there are unsaved changes in edit mode
 	editOriginalValue   string            // original value before editing
 	pendingEdits        map[string]string // fieldName -> new value for all pending edits
@@ -65,7 +67,7 @@ type model struct {
 }
 
 func initialModel() model {
-	client := NewClient(settings.Redmine.URL, settings.Redmine.APIKey)
+	client := api.NewClient(settings.Redmine.URL, settings.Redmine.APIKey)
 	filterInput := textinput.New()
 	filterInput.Placeholder = "Type to filter issues..."
 	filterInput.CharLimit = 100

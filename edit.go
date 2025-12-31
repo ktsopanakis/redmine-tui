@@ -7,6 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/ktsopanakis/redmine-tui/api"
 )
 
 // EditableField represents a field that can be edited
@@ -14,7 +16,7 @@ type EditableField struct {
 	Name        string
 	DisplayName string
 	Type        string // "text", "number", "select", "date", "multiline"
-	GetValue    func(*Issue) string
+	GetValue    func(*api.Issue) string
 	GetOptions  func(*model) []string // for select fields
 }
 
@@ -24,19 +26,19 @@ var editableFields = []EditableField{
 		Name:        "subject",
 		DisplayName: "Subject",
 		Type:        "text",
-		GetValue:    func(i *Issue) string { return i.Subject },
+		GetValue:    func(i *api.Issue) string { return i.Subject },
 	},
 	{
 		Name:        "description",
 		DisplayName: "Description",
 		Type:        "multiline",
-		GetValue:    func(i *Issue) string { return i.Description },
+		GetValue:    func(i *api.Issue) string { return i.Description },
 	},
 	{
 		Name:        "status_id",
 		DisplayName: "Status",
 		Type:        "select",
-		GetValue:    func(i *Issue) string { return i.Status.Name },
+		GetValue:    func(i *api.Issue) string { return i.Status.Name },
 		GetOptions: func(m *model) []string {
 			options := []string{}
 			for _, s := range m.availableStatuses {
@@ -49,7 +51,7 @@ var editableFields = []EditableField{
 		Name:        "priority_id",
 		DisplayName: "Priority",
 		Type:        "select",
-		GetValue:    func(i *Issue) string { return i.Priority.Name },
+		GetValue:    func(i *api.Issue) string { return i.Priority.Name },
 		GetOptions: func(m *model) []string {
 			options := []string{}
 			for _, p := range m.availablePriorities {
@@ -62,7 +64,7 @@ var editableFields = []EditableField{
 		Name:        "assigned_to_id",
 		DisplayName: "Assigned To",
 		Type:        "select",
-		GetValue: func(i *Issue) string {
+		GetValue: func(i *api.Issue) string {
 			if i.AssignedTo != nil {
 				return i.AssignedTo.Name
 			}
@@ -88,24 +90,24 @@ var editableFields = []EditableField{
 		Name:        "done_ratio",
 		DisplayName: "Progress",
 		Type:        "number",
-		GetValue:    func(i *Issue) string { return fmt.Sprintf("%d", i.DoneRatio) },
+		GetValue:    func(i *api.Issue) string { return fmt.Sprintf("%d", i.DoneRatio) },
 	},
 	{
 		Name:        "due_date",
 		DisplayName: "Due Date",
 		Type:        "date",
-		GetValue:    func(i *Issue) string { return i.DueDate },
+		GetValue:    func(i *api.Issue) string { return i.DueDate },
 	},
 }
 
 // Message types for edit operations
 type statusesLoadedMsg struct {
-	statuses []Status
+	statuses []api.Status
 	err      error
 }
 
 type prioritiesLoadedMsg struct {
-	priorities []Priority
+	priorities []api.Priority
 	err        error
 }
 
@@ -115,21 +117,21 @@ type issueUpdatedMsg struct {
 }
 
 // Commands for edit operations
-func fetchStatuses(client *Client) tea.Cmd {
+func fetchStatuses(client *api.Client) tea.Cmd {
 	return func() tea.Msg {
 		statuses, err := client.GetStatuses()
 		return statusesLoadedMsg{statuses: statuses, err: err}
 	}
 }
 
-func fetchPriorities(client *Client) tea.Cmd {
+func fetchPriorities(client *api.Client) tea.Cmd {
 	return func() tea.Msg {
 		priorities, err := client.GetPriorities()
 		return prioritiesLoadedMsg{priorities: priorities, err: err}
 	}
 }
 
-func updateIssue(client *Client, issueID int, field EditableField, value string, m *model) tea.Cmd {
+func updateIssue(client *api.Client, issueID int, field EditableField, value string, m *model) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(map[string]interface{})
 
@@ -193,7 +195,7 @@ func updateIssue(client *Client, issueID int, field EditableField, value string,
 }
 
 // updateIssueMultiple sends all pending edits to the API in one request
-func updateIssueMultiple(client *Client, issueID int, pendingEdits map[string]string, m model) tea.Cmd {
+func updateIssueMultiple(client *api.Client, issueID int, pendingEdits map[string]string, m model) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(map[string]interface{})
 
