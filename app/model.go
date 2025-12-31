@@ -800,6 +800,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						ui.SendLoadingMsg("Fetching issues..."),
 						fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
 					)
+				case "r":
+					// Reload all issues
+					m.loading = true
+					m.selectedIndex = 0
+					m.loadingIndicator.Show()
+					return m, tea.Batch(
+						ui.SendLoadingMsg("Reloading issues..."),
+						fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+					)
 				case "u":
 					// Enter user selection mode
 					m.userInputMode = "user"

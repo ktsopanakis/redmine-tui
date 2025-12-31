@@ -16,6 +16,7 @@ func (m Model) getHelpContent() []string {
 		"Filtering & Views:",
 		"  f              - Toggle filter mode (filter issues by text)",
 		"  m              - Toggle between My Issues/All Issues",
+		"  r              - Reload all issues from server",
 		"  u              - Select users to filter by",
 		"  p              - Select projects to filter by",
 		"",

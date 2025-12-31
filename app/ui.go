@@ -135,6 +135,7 @@ func (m Model) getFooterItems() []appui.FooterItem {
 		{Text: "Tab: Switch", Required: false},
 		{Text: "f: Filter", Required: true},
 		{Text: "m: My/All", Required: true},
+		{Text: "r: Reload", Required: true},
 		{Text: "e: Edit", Required: true},
 		{Text: "?: Help", Required: false},
 		{Text: "q: Quit", Required: true},
