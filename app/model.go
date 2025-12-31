@@ -26,7 +26,6 @@ type Model struct {
 	activePane          int
 	leftTitle           string
 	rightTitle          string
-	showHelp            bool
 	client              *api.Client
 	issues              []api.Issue
 	selectedIndex       int
@@ -65,6 +64,10 @@ type Model struct {
 	editOriginalValue   string            // original value before editing
 	pendingEdits        map[string]string // fieldName -> new value for all pending edits
 	originalValues      map[string]string // fieldName -> original value for comparison
+
+	// Modal state
+	showModal     bool   // whether a modal is currently displayed
+	modalType     string // type of modal: "help", etc.
 }
 
 func InitialModel() Model {
@@ -246,7 +249,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "esc":
-			if m.editMode {
+			if m.showModal {
+				// Close modal
+				m.showModal = false
+				m.modalType = ""
+				return m, nil
+			} else if m.editMode {
 				// Exit edit mode without saving - clear all pending edits
 				m.editMode = false
 				m.hasUnsavedChanges = false
@@ -751,7 +759,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterInput.Focus()
 					return m, tea.Batch(fetchProjects(m.client), textinput.Blink)
 				case "?":
-					m.showHelp = !m.showHelp
+					m.showModal = !m.showModal
+					if m.showModal {
+						m.modalType = "help"
+					}
 					return m, nil
 				case "tab":
 					// Switch between panes

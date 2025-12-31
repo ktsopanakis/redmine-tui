@@ -84,6 +84,18 @@ func (m Model) View() string {
 		panes = appui.OverlayOnContent(panes, listOverlay)
 	}
 
+	// If modal is active, overlay the modal on top
+	if m.showModal {
+		var modal string
+		switch m.modalType {
+		case "help":
+			modal = m.renderHelpModal()
+		}
+		if modal != "" {
+			panes = appui.OverlayOnContent(panes, modal)
+		}
+	}
+
 	// Footer with adaptive options
 	var footer string
 	if m.filterMode {
@@ -116,6 +128,7 @@ func (m Model) getFooterItems() []appui.FooterItem {
 		{Text: "f: Filter", Required: true},
 		{Text: "m: My/All", Required: true},
 		{Text: "e: Edit", Required: true},
+		{Text: "?: Help", Required: false},
 		{Text: "q: Quit", Required: true},
 	}
 }
