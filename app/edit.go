@@ -131,69 +131,6 @@ func fetchPriorities(client *api.Client) tea.Cmd {
 	}
 }
 
-func updateIssue(client *api.Client, issueID int, field EditableField, value string, m *Model) tea.Cmd {
-	return func() tea.Msg {
-		updates := make(map[string]interface{})
-
-		switch field.Name {
-		case "subject":
-			updates["subject"] = value
-		case "description":
-			updates["description"] = value
-		case "status_id":
-			// Find status ID by name
-			for _, s := range m.availableStatuses {
-				if s.Name == value {
-					updates["status_id"] = s.ID
-					break
-				}
-			}
-		case "priority_id":
-			// Find priority ID by name
-			for _, p := range m.availablePriorities {
-				if p.Name == value {
-					updates["priority_id"] = p.ID
-					break
-				}
-			}
-		case "assigned_to_id":
-			if value == "Unassigned" {
-				updates["assigned_to_id"] = nil
-			} else {
-				// Find user ID by name
-				for _, u := range m.availableUsers {
-					displayName := u.Name
-					if displayName == "" {
-						if u.Firstname != "" || u.Lastname != "" {
-							displayName = strings.TrimSpace(u.Firstname + " " + u.Lastname)
-						} else if u.Login != "" {
-							displayName = u.Login
-						}
-					}
-					if displayName == value {
-						updates["assigned_to_id"] = u.ID
-						break
-					}
-				}
-			}
-		case "done_ratio":
-			ratio, err := strconv.Atoi(value)
-			if err == nil && ratio >= 0 && ratio <= 100 {
-				updates["done_ratio"] = ratio
-			}
-		case "due_date":
-			if value != "" {
-				updates["due_date"] = value
-			} else {
-				updates["due_date"] = nil
-			}
-		}
-
-		err := client.UpdateIssue(issueID, updates)
-		return issueUpdatedMsg{issueID: issueID, err: err}
-	}
-}
-
 // updateIssueMultiple sends all pending edits to the API in one request
 func updateIssueMultiple(client *api.Client, issueID int, pendingEdits map[string]string, m Model) tea.Cmd {
 	return func() tea.Msg {

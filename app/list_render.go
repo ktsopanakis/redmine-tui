@@ -55,8 +55,8 @@ func (m *Model) buildProjectListItems() []appui.ListItem {
 func (m *Model) updateFilteredIndices(items []appui.ListItem) {
 	m.filteredIndices = []int{}
 
-	if m.userInputMode == "user" {
-		// Map filtered items back to original indices
+	switch m.userInputMode {
+	case "user":
 		for _, item := range items {
 			for i, user := range m.availableUsers {
 				if user.ID == item.ID {
@@ -65,8 +65,7 @@ func (m *Model) updateFilteredIndices(items []appui.ListItem) {
 				}
 			}
 		}
-	} else if m.userInputMode == "project" {
-		// Map filtered items back to original indices
+	case "project":
 		for _, item := range items {
 			for i, project := range m.availableProjects {
 				if project.ID == item.ID {
@@ -90,22 +89,19 @@ func (m Model) renderListOverlay() string {
 	var title, borderColor, loadingMsg, emptyMsg string
 	var items []appui.ListItem
 
-	if m.userInputMode == "user" {
+	switch m.userInputMode {
+	case "user":
 		title = "Select Users (↑/↓: Navigate, Space: Toggle, Enter: Apply, Esc: Cancel)"
 		borderColor = "#61AFEF"
 		loadingMsg = "Loading users..."
 		emptyMsg = "No users found"
-
-		// Create mutable copy to build list
 		mutableModel := m
 		items = mutableModel.buildUserListItems()
-	} else if m.userInputMode == "project" {
+	case "project":
 		title = "Select Projects (↑/↓: Navigate, Space: Toggle, Enter: Apply, Esc: Cancel)"
 		borderColor = "#98C379"
 		loadingMsg = "Loading projects..."
 		emptyMsg = "No projects found"
-
-		// Create mutable copy to build list
 		mutableModel := m
 		items = mutableModel.buildProjectListItems()
 	}

@@ -50,7 +50,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Setup failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("\nSetup complete! Starting Redmine TUI...\n")
+		fmt.Println("\nSetup complete! Starting Redmine TUI...")
 	} else if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		configPath, _ := config.GetConfigPath()

@@ -13,6 +13,7 @@ mise use -g redmine-tui@0.0.9
 ```
 
 Configure on first run:
+
 ```bash
 redmine-tui --setup
 ```
@@ -20,6 +21,7 @@ redmine-tui --setup
 ## Development
 
 Clone and build:
+
 ```bash
 git clone https://github.com/ktsopanakis/redmine-tui.git
 cd redmine-tui
