@@ -20,12 +20,19 @@ A glamorous Terminal User Interface (TUI) application built with Go and Charm li
 
 Install [mise](https://mise.jdx.dev/) if you haven't already, then:
 
+**Option 1: Clone and build**
 ```bash
 git clone https://github.com/ktsopanakis/redmine-tui.git
 cd redmine-tui
-mise install          # Installs Go 1.25.4
-mise run build        # Builds the binary
-mise run install      # Installs to $GOPATH/bin
+mise trust               # Trust the mise config
+mise install             # Installs Go 1.25.4
+mise run install         # Builds and installs to $GOPATH/bin
+```
+
+**Option 2: Direct install with Go**
+```bash
+mise use -g go@1.25.4                                    # Install Go globally
+go install github.com/ktsopanakis/redmine-tui@latest    # Install directly
 ```
 
 ### Manual Installation
@@ -36,6 +43,18 @@ Requires Go 1.25.4 or later:
 git clone https://github.com/ktsopanakis/redmine-tui.git
 cd redmine-tui
 go build
+```
+
+## Development Tasks
+
+With mise installed in the project directory:
+
+```bash
+mise run build        # Build binary
+mise run install      # Install to $GOPATH/bin
+mise run dev          # Build and run
+mise run test         # Run tests
+mise run clean        # Remove binary
 ```
 
 ## Quick Start
