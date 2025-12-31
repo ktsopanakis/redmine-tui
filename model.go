@@ -244,10 +244,11 @@ func (m *model) updatePaneContent() {
 	} else if len(m.issues) == 0 {
 		leftContent = "No issues found."
 	} else {
-		// Each issue takes 3 lines (ID+Title, Status+Project, Assignee, then blank line)
+		// Each issue takes 3 lines (ID+Title, Status+Project, Assignee) + 1 blank line = 4 total
 		linesPerIssue := 4
 		visibleLines := m.leftPane.Height
-		visibleIssues := visibleLines / linesPerIssue
+		// Calculate how many complete issues we can fit (excluding the trailing blank line for the last issue)
+		visibleIssues := (visibleLines + 1) / linesPerIssue
 
 		// Calculate start index based on position in list
 		var startIdx int
