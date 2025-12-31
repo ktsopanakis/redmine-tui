@@ -61,6 +61,10 @@ type model struct {
 	filterMode          bool
 	filterInput         textinput.Model
 	filterText          string
+	viewMode            string // "my", "all", "user"
+	assigneeFilter      string // username or "" for my/all modes
+	projectFilter       string // project name or "" for all projects
+	userInputMode       string // "", "user", "project" - which input is active
 }
 
 func initialModel() model {
@@ -77,6 +81,7 @@ func initialModel() model {
 		selectedIndex: 0,
 		loading:       true,
 		filterInput:   filterInput,
+		viewMode:      "my",
 	}
 }
 
@@ -95,9 +100,47 @@ type currentUserMsg struct {
 }
 type tickMsg time.Time
 
-func fetchIssues(client *Client) tea.Cmd {
+func fetchIssues(client *Client, viewMode string, assigneeFilter string, projectFilter string, issues []Issue) tea.Cmd {
 	return func() tea.Msg {
-		resp, err := client.GetIssues(0, true, true, 100, 0)
+		var resp *IssuesResponse
+		var err error
+
+		// Determine project ID if projectFilter is set
+		projectID := 0
+		if projectFilter != "" && len(issues) > 0 {
+			// Try to find project ID from existing issues
+			for _, issue := range issues {
+				if strings.EqualFold(issue.Project.Name, projectFilter) {
+					projectID = issue.Project.ID
+					break
+				}
+			}
+		}
+
+		// Determine user ID if assigneeFilter is set
+		userID := 0
+		if assigneeFilter != "" && viewMode == "user" && len(issues) > 0 {
+			// Try to find user ID from existing issues
+			for _, issue := range issues {
+				if issue.AssignedTo != nil && strings.EqualFold(issue.AssignedTo.Name, assigneeFilter) {
+					userID = issue.AssignedTo.ID
+					break
+				}
+			}
+		}
+
+		switch viewMode {
+		case "my":
+			// Fetch issues assigned to me
+			resp, err = client.GetIssues(projectID, true, 0, true, 100, 0)
+		case "all":
+			// Fetch all open issues
+			resp, err = client.GetIssues(projectID, false, 0, true, 100, 0)
+		case "user":
+			// Fetch issues for specific user
+			resp, err = client.GetIssues(projectID, false, userID, true, 100, 0)
+		}
+
 		if err != nil {
 			return issuesLoadedMsg{err: err}
 		}
@@ -132,7 +175,7 @@ func fetchCurrentUser(client *Client) tea.Cmd {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(fetchIssues(m.client), fetchCurrentUser(m.client), tickCmd())
+	return tea.Batch(fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues), fetchCurrentUser(m.client), tickCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -240,11 +283,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedIndex = 0
 				m.updatePaneContent()
 				return m, nil
+			} else if m.userInputMode != "" {
+				// Exit user/project input mode without applying
+				m.userInputMode = ""
+				m.filterInput.Blur()
+				m.filterInput.SetValue("")
+				return m, nil
 			}
 
 		case "?":
 			m.showHelp = !m.showHelp
 			return m, nil
+
+		case "m":
+			if !m.filterMode && m.userInputMode == "" {
+				// Toggle view mode: my -> all -> my
+				if m.viewMode == "my" {
+					m.viewMode = "all"
+				} else {
+					m.viewMode = "my"
+				}
+				m.loading = true
+				m.selectedIndex = 0
+				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
+			}
+
+		case "u":
+			if !m.filterMode && m.userInputMode == "" {
+				// Enter user selection mode
+				m.userInputMode = "user"
+				m.filterInput.Placeholder = "Enter username (or leave empty for all)..."
+				m.filterInput.SetValue(m.assigneeFilter)
+				m.filterInput.Focus()
+				return m, textinput.Blink
+			}
+
+		case "p":
+			if !m.filterMode && m.userInputMode == "" {
+				// Enter project selection mode
+				m.userInputMode = "project"
+				m.filterInput.Placeholder = "Enter project name (or leave empty for all)..."
+				m.filterInput.SetValue(m.projectFilter)
+				m.filterInput.Focus()
+				return m, textinput.Blink
+			}
 
 		case "tab":
 			if !m.filterMode {
@@ -265,6 +347,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedIndex = 0
 				m.updatePaneContent()
 				return m, nil
+			} else if m.userInputMode == "user" {
+				// Apply user filter
+				m.assigneeFilter = m.filterInput.Value()
+				if m.assigneeFilter != "" {
+					m.viewMode = "user"
+				} else {
+					m.viewMode = "all"
+				}
+				m.userInputMode = ""
+				m.filterInput.Blur()
+				m.filterInput.SetValue("")
+				m.loading = true
+				m.selectedIndex = 0
+				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
+			} else if m.userInputMode == "project" {
+				// Apply project filter
+				m.projectFilter = m.filterInput.Value()
+				m.userInputMode = ""
+				m.filterInput.Blur()
+				m.filterInput.SetValue("")
+				m.loading = true
+				m.selectedIndex = 0
+				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
 			}
 
 		case "up", "k":
@@ -334,8 +439,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 
 		default:
-			// Handle text input in filter mode
-			if m.filterMode {
+			// Handle text input in filter mode or user input mode
+			if m.filterMode || m.userInputMode != "" {
 				m.filterInput, cmd = m.filterInput.Update(msg)
 				cmds = append(cmds, cmd)
 			}
@@ -560,11 +665,32 @@ func (m *model) updatePaneContent() {
 
 	m.leftPane.SetContent(leftContent)
 
-	// Update left title with filter info
+	// Update left title with filter info and view mode
+	viewModeText := ""
+	switch m.viewMode {
+	case "my":
+		viewModeText = "My Issues"
+	case "all":
+		viewModeText = "All Issues"
+	case "user":
+		if m.assigneeFilter != "" {
+			viewModeText = m.assigneeFilter
+		} else {
+			viewModeText = "All Issues"
+		}
+	default:
+		viewModeText = "Issues"
+	}
+
+	// Add project filter to title if set
+	if m.projectFilter != "" {
+		viewModeText = m.projectFilter + ": " + viewModeText
+	}
+
 	if m.filterText != "" {
-		m.leftTitle = fmt.Sprintf("Issues (%d/%d)", len(filteredIssues), len(m.issues))
+		m.leftTitle = fmt.Sprintf("%s (%d/%d)", viewModeText, len(filteredIssues), len(m.issues))
 	} else {
-		m.leftTitle = "Issues"
+		m.leftTitle = viewModeText
 	}
 
 	// Right pane: Selected issue details

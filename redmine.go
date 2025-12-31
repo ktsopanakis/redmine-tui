@@ -131,13 +131,15 @@ type ProjectsResponse struct {
 }
 
 // GetIssues fetches issues with optional filters
-func (c *Client) GetIssues(projectID int, assignedToMe bool, statusOpen bool, limit, offset int) (*IssuesResponse, error) {
+func (c *Client) GetIssues(projectID int, assignedToMe bool, assignedToUserId int, statusOpen bool, limit, offset int) (*IssuesResponse, error) {
 	params := url.Values{}
 	if projectID > 0 {
 		params.Set("project_id", fmt.Sprintf("%d", projectID))
 	}
 	if assignedToMe {
 		params.Set("assigned_to_id", "me")
+	} else if assignedToUserId > 0 {
+		params.Set("assigned_to_id", fmt.Sprintf("%d", assignedToUserId))
 	}
 	if statusOpen {
 		params.Set("status_id", "open")

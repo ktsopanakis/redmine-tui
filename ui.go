@@ -215,6 +215,20 @@ func (m model) View() string {
 			Bold(true).
 			Render("Filter: ")
 		footer = footerStyle.Width(m.width).Render(filterPrompt + m.filterInput.View())
+	} else if m.userInputMode == "user" {
+		// Show user input in footer
+		userPrompt := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#C678DD")).
+			Bold(true).
+			Render("User: ")
+		footer = footerStyle.Width(m.width).Render(userPrompt + m.filterInput.View())
+	} else if m.userInputMode == "project" {
+		// Show project input in footer
+		projectPrompt := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#98C379")).
+			Bold(true).
+			Render("Project: ")
+		footer = footerStyle.Width(m.width).Render(projectPrompt + m.filterInput.View())
 	} else {
 		footer = footerStyle.Width(m.width).Render(m.getFooterText())
 	}
@@ -235,12 +249,15 @@ func (m model) getFooterText() string {
 		"↑↓/jk: Scroll",
 		"PgUp/PgDn: Page",
 		"f: Filter",
+		"m: My/All",
+		"u: User",
+		"p: Project",
 		"Esc: Clear",
 		"?: Help",
 		"q: Quit",
 	}
 
-	required := []string{"Tab: Switch", "f: Filter", "q: Quit"}
+	required := []string{"f: Filter", "m: My/All", "u: User", "p: Project", "q: Quit"}
 
 	text := ""
 	for _, item := range items {
