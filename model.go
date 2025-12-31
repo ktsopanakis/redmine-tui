@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,6 +66,16 @@ type model struct {
 	assigneeFilter      string // username or "" for my/all modes
 	projectFilter       string // project name or "" for all projects
 	userInputMode       string // "", "user", "project" - which input is active
+
+	// List selection state
+	availableUsers    []User
+	availableProjects []Project
+	selectedUsers     map[int]bool // user ID -> selected
+	selectedProjects  map[int]bool // project ID -> selected
+	listCursor        int          // cursor position in list
+	listLoading       bool         // loading list data
+	listFilterText    string       // filter text for list items
+	filteredIndices   []int        // indices of filtered items in original list
 }
 
 func initialModel() model {
@@ -74,14 +85,16 @@ func initialModel() model {
 	filterInput.CharLimit = 100
 	filterInput.Width = 50
 	return model{
-		leftTitle:     "Issues",
-		rightTitle:    "Details",
-		activePane:    0,
-		client:        client,
-		selectedIndex: 0,
-		loading:       true,
-		filterInput:   filterInput,
-		viewMode:      "my",
+		leftTitle:        "Issues",
+		rightTitle:       "Details",
+		activePane:       0,
+		client:           client,
+		selectedIndex:    0,
+		loading:          true,
+		filterInput:      filterInput,
+		viewMode:         "my",
+		selectedUsers:    make(map[int]bool),
+		selectedProjects: make(map[int]bool),
 	}
 }
 
@@ -98,6 +111,17 @@ type currentUserMsg struct {
 	user *User
 	err  error
 }
+
+type usersLoadedMsg struct {
+	users []User
+	err   error
+}
+
+type projectsLoadedMsg struct {
+	projects []Project
+	err      error
+}
+
 type tickMsg time.Time
 
 func fetchIssues(client *Client, viewMode string, assigneeFilter string, projectFilter string, issues []Issue) tea.Cmd {
@@ -119,12 +143,17 @@ func fetchIssues(client *Client, viewMode string, assigneeFilter string, project
 
 		// Determine user ID if assigneeFilter is set
 		userID := 0
-		if assigneeFilter != "" && viewMode == "user" && len(issues) > 0 {
-			// Try to find user ID from existing issues
-			for _, issue := range issues {
-				if issue.AssignedTo != nil && strings.EqualFold(issue.AssignedTo.Name, assigneeFilter) {
-					userID = issue.AssignedTo.ID
-					break
+		if assigneeFilter != "" && viewMode == "user" {
+			// Try to parse as number first (from list selection)
+			var parseErr error
+			userID, parseErr = strconv.Atoi(assigneeFilter)
+			if parseErr != nil || userID == 0 {
+				// Fall back to searching by name in existing issues
+				for _, issue := range issues {
+					if issue.AssignedTo != nil && strings.EqualFold(issue.AssignedTo.Name, assigneeFilter) {
+						userID = issue.AssignedTo.ID
+						break
+					}
 				}
 			}
 		}
@@ -139,6 +168,15 @@ func fetchIssues(client *Client, viewMode string, assigneeFilter string, project
 		case "user":
 			// Fetch issues for specific user
 			resp, err = client.GetIssues(projectID, false, userID, true, 100, 0)
+		case "user-multi":
+			// Fetch all issues for client-side filtering by multiple users
+			resp, err = client.GetIssues(projectID, false, 0, true, 100, 0)
+		case "project-multi":
+			// Fetch all issues for client-side filtering by multiple projects
+			resp, err = client.GetIssues(0, false, 0, true, 100, 0)
+		default:
+			// Default to all issues
+			resp, err = client.GetIssues(projectID, false, 0, true, 100, 0)
 		}
 
 		if err != nil {
@@ -171,6 +209,26 @@ func fetchCurrentUser(client *Client) tea.Cmd {
 			return currentUserMsg{err: err}
 		}
 		return currentUserMsg{user: user}
+	}
+}
+
+func fetchUsers(client *Client) tea.Cmd {
+	return func() tea.Msg {
+		users, err := client.GetUsers(100, 0)
+		if err != nil {
+			return usersLoadedMsg{err: err}
+		}
+		return usersLoadedMsg{users: users}
+	}
+}
+
+func fetchProjects(client *Client) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := client.GetProjects(100, 0)
+		if err != nil {
+			return projectsLoadedMsg{err: err}
+		}
+		return projectsLoadedMsg{projects: resp.Projects}
 	}
 }
 
@@ -222,6 +280,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case usersLoadedMsg:
+		m.listLoading = false
+		if msg.err == nil {
+			m.availableUsers = msg.users
+			m.listCursor = 0
+			// Build initial filtered list
+			m.buildFilteredList()
+		}
+		return m, nil
+
+	case projectsLoadedMsg:
+		m.listLoading = false
+		if msg.err == nil {
+			m.availableProjects = msg.projects
+			m.listCursor = 0
+			// Build initial filtered list
+			m.buildFilteredList()
+		}
+		return m, nil
+
 	case tickMsg:
 		// Time update - schedule next tick
 		return m, tickCmd()
@@ -258,19 +336,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
+		// Check if we're in any input mode - if so, only handle esc, enter, and pass to input
+		inInputMode := m.filterMode || m.userInputMode != ""
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-
-		case "f":
-			if !m.filterMode {
-				// Enter filter mode
-				m.filterMode = true
-				// Keep current filter value in input for editing
-				m.filterInput.SetValue(m.filterText)
-				m.filterInput.Focus()
-				return m, textinput.Blink
-			}
 
 		case "esc":
 			if m.filterMode {
@@ -286,56 +357,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.userInputMode != "" {
 				// Exit user/project input mode without applying
 				m.userInputMode = ""
+				m.listFilterText = ""
 				m.filterInput.Blur()
 				m.filterInput.SetValue("")
 				return m, nil
-			}
-
-		case "?":
-			m.showHelp = !m.showHelp
-			return m, nil
-
-		case "m":
-			if !m.filterMode && m.userInputMode == "" {
-				// Toggle view mode: my -> all -> my
-				if m.viewMode == "my" {
-					m.viewMode = "all"
-				} else {
-					m.viewMode = "my"
-				}
-				m.loading = true
-				m.selectedIndex = 0
-				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
-			}
-
-		case "u":
-			if !m.filterMode && m.userInputMode == "" {
-				// Enter user selection mode
-				m.userInputMode = "user"
-				m.filterInput.Placeholder = "Enter username (or leave empty for all)..."
-				m.filterInput.SetValue(m.assigneeFilter)
-				m.filterInput.Focus()
-				return m, textinput.Blink
-			}
-
-		case "p":
-			if !m.filterMode && m.userInputMode == "" {
-				// Enter project selection mode
-				m.userInputMode = "project"
-				m.filterInput.Placeholder = "Enter project name (or leave empty for all)..."
-				m.filterInput.SetValue(m.projectFilter)
-				m.filterInput.Focus()
-				return m, textinput.Blink
-			}
-
-		case "tab":
-			if !m.filterMode {
-				// Switch between panes
-				if m.activePane == 0 {
-					m.activePane = 1
-				} else {
-					m.activePane = 0
-				}
 			}
 
 		case "enter":
@@ -348,33 +373,99 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updatePaneContent()
 				return m, nil
 			} else if m.userInputMode == "user" {
-				// Apply user filter
-				m.assigneeFilter = m.filterInput.Value()
-				if m.assigneeFilter != "" {
-					m.viewMode = "user"
-				} else {
-					m.viewMode = "all"
+				// Apply selected users
+				selectedUserIDs := []int{}
+				selectedUserID := 0
+				for id, selected := range m.selectedUsers {
+					if selected {
+						selectedUserIDs = append(selectedUserIDs, id)
+						if selectedUserID == 0 {
+							selectedUserID = id
+						}
+					}
 				}
+
+				// Use first selected user ID for API filter
+				if len(selectedUserIDs) >= 1 {
+					m.viewMode = "user"
+					// Store user ID for API
+					for _, user := range m.availableUsers {
+						if m.selectedUsers[user.ID] {
+							m.assigneeFilter = fmt.Sprintf("%d", user.ID)
+							break
+						}
+					}
+				} else {
+					// No selection - show all
+					m.viewMode = "all"
+					m.assigneeFilter = ""
+				}
+
 				m.userInputMode = ""
-				m.filterInput.Blur()
+				m.listFilterText = ""
 				m.filterInput.SetValue("")
+				m.filterInput.Blur()
 				m.loading = true
 				m.selectedIndex = 0
 				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
 			} else if m.userInputMode == "project" {
-				// Apply project filter
-				m.projectFilter = m.filterInput.Value()
+				// Apply selected projects - use client-side filtering for multiple projects
+				selectedProjectIDs := []int{}
+				for id, selected := range m.selectedProjects {
+					if selected {
+						selectedProjectIDs = append(selectedProjectIDs, id)
+					}
+				}
+
+				if len(selectedProjectIDs) > 0 {
+					m.viewMode = "project-multi"
+					// Store selected IDs as comma-separated string
+					var idStrings []string
+					for _, id := range selectedProjectIDs {
+						idStrings = append(idStrings, fmt.Sprintf("%d", id))
+					}
+					m.projectFilter = strings.Join(idStrings, ",")
+				} else {
+					// No selection - show all
+					m.projectFilter = ""
+				}
+
 				m.userInputMode = ""
-				m.filterInput.Blur()
+				m.listFilterText = ""
 				m.filterInput.SetValue("")
+				m.filterInput.Blur()
 				m.loading = true
 				m.selectedIndex = 0
 				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
+				m.listFilterText = ""
+				m.filterInput.SetValue("")
+				m.filterInput.Blur()
+				m.loading = true
+				m.selectedIndex = 0
+				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
+			} else if !inInputMode {
+				// Open selected issue in browser or show details
+				filteredIssues := m.getFilteredIssues()
+				if len(filteredIssues) > 0 && m.selectedIndex < len(filteredIssues) {
+					cmds = append(cmds, fetchIssueDetail(m.client, filteredIssues[m.selectedIndex].ID))
+				}
 			}
 
 		case "up", "k":
-			if m.filterMode {
-				// Don't navigate in filter mode
+			if m.userInputMode == "user" && len(m.filteredIndices) > 0 {
+				// Navigate user list
+				if m.listCursor > 0 {
+					m.listCursor--
+				}
+				return m, nil
+			} else if m.userInputMode == "project" && len(m.filteredIndices) > 0 {
+				// Navigate project list
+				if m.listCursor > 0 {
+					m.listCursor--
+				}
+				return m, nil
+			} else if inInputMode {
+				// Don't navigate in other input modes
 				return m, nil
 			}
 			if m.activePane == 0 {
@@ -398,8 +489,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			if m.filterMode {
-				// Don't navigate in filter mode
+			if m.userInputMode == "user" && len(m.filteredIndices) > 0 {
+				// Navigate user list
+				if m.listCursor < len(m.filteredIndices)-1 {
+					m.listCursor++
+				}
+				return m, nil
+			} else if m.userInputMode == "project" && len(m.filteredIndices) > 0 {
+				// Navigate project list
+				if m.listCursor < len(m.filteredIndices)-1 {
+					m.listCursor++
+				}
+				return m, nil
+			} else if inInputMode {
+				// Don't navigate in other input modes
 				return m, nil
 			}
 			if m.activePane == 0 {
@@ -423,6 +526,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "pgup", "b":
+			if inInputMode {
+				// Don't page in input mode
+				return m, nil
+			}
 			if m.activePane == 0 {
 				m.leftPane, cmd = m.leftPane.Update(msg)
 			} else {
@@ -431,6 +538,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 
 		case "pgdown":
+			if inInputMode {
+				// Don't page in input mode
+				return m, nil
+			}
 			if m.activePane == 0 {
 				m.leftPane, cmd = m.leftPane.Update(msg)
 			} else {
@@ -438,11 +549,81 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			cmds = append(cmds, cmd)
 
+		case " ": // Space key
+			if m.userInputMode == "user" && len(m.filteredIndices) > 0 && m.listCursor < len(m.filteredIndices) {
+				// Toggle selection of current user
+				user := m.availableUsers[m.filteredIndices[m.listCursor]]
+				m.selectedUsers[user.ID] = !m.selectedUsers[user.ID]
+				return m, nil
+			} else if m.userInputMode == "project" && len(m.filteredIndices) > 0 && m.listCursor < len(m.filteredIndices) {
+				// Toggle selection of current project
+				project := m.availableProjects[m.filteredIndices[m.listCursor]]
+				m.selectedProjects[project.ID] = !m.selectedProjects[project.ID]
+				return m, nil
+			}
+
 		default:
 			// Handle text input in filter mode or user input mode
-			if m.filterMode || m.userInputMode != "" {
+			if inInputMode {
 				m.filterInput, cmd = m.filterInput.Update(msg)
 				cmds = append(cmds, cmd)
+				// Update list filter text when in list mode
+				if m.userInputMode == "user" || m.userInputMode == "project" {
+					m.listFilterText = m.filterInput.Value()
+					// Rebuild filtered indices immediately
+					m.buildFilteredList()
+				}
+			} else {
+				// Handle command keys when NOT in input mode
+				switch msg.String() {
+				case "f":
+					// Enter filter mode
+					m.filterMode = true
+					m.filterInput.SetValue(m.filterText)
+					m.filterInput.Placeholder = "Type to filter issues..."
+					m.filterInput.Focus()
+					return m, textinput.Blink
+				case "m":
+					// Toggle view mode: my -> all -> my
+					if m.viewMode == "my" {
+						m.viewMode = "all"
+					} else {
+						m.viewMode = "my"
+					}
+					m.loading = true
+					m.selectedIndex = 0
+					return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
+				case "u":
+					// Enter user selection mode
+					m.userInputMode = "user"
+					m.listCursor = 0
+					m.listLoading = true
+					m.listFilterText = ""
+					m.filterInput.SetValue("")
+					m.filterInput.Placeholder = "Type to filter users..."
+					m.filterInput.Focus()
+					return m, tea.Batch(fetchUsers(m.client), textinput.Blink)
+				case "p":
+					// Enter project selection mode
+					m.userInputMode = "project"
+					m.listCursor = 0
+					m.listLoading = true
+					m.listFilterText = ""
+					m.filterInput.SetValue("")
+					m.filterInput.Placeholder = "Type to filter projects..."
+					m.filterInput.Focus()
+					return m, tea.Batch(fetchProjects(m.client), textinput.Blink)
+				case "?":
+					m.showHelp = !m.showHelp
+					return m, nil
+				case "tab":
+					// Switch between panes
+					if m.activePane == 0 {
+						m.activePane = 1
+					} else {
+						m.activePane = 0
+					}
+				}
 			}
 		}
 
@@ -471,13 +652,51 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updatePaneContent updates the viewport content based on current state
 func (m *model) getFilteredIssues() []Issue {
+	// First apply multi-user or multi-project filter if set
+	filteredBySelection := m.issues
+
+	if m.viewMode == "user-multi" && m.assigneeFilter != "" {
+		// Filter by multiple user IDs
+		userIDs := strings.Split(m.assigneeFilter, ",")
+		userIDMap := make(map[string]bool)
+		for _, id := range userIDs {
+			userIDMap[id] = true
+		}
+
+		var filtered []Issue
+		for _, issue := range m.issues {
+			if issue.AssignedTo != nil {
+				if userIDMap[fmt.Sprintf("%d", issue.AssignedTo.ID)] {
+					filtered = append(filtered, issue)
+				}
+			}
+		}
+		filteredBySelection = filtered
+	} else if m.viewMode == "project-multi" && m.projectFilter != "" {
+		// Filter by multiple project IDs
+		projectIDs := strings.Split(m.projectFilter, ",")
+		projectIDMap := make(map[string]bool)
+		for _, id := range projectIDs {
+			projectIDMap[id] = true
+		}
+
+		var filtered []Issue
+		for _, issue := range m.issues {
+			if projectIDMap[fmt.Sprintf("%d", issue.Project.ID)] {
+				filtered = append(filtered, issue)
+			}
+		}
+		filteredBySelection = filtered
+	}
+
+	// Then apply text filter if present
 	if m.filterText == "" {
-		return m.issues
+		return filteredBySelection
 	}
 
 	filterLower := strings.ToLower(m.filterText)
 	filtered := []Issue{}
-	for _, issue := range m.issues {
+	for _, issue := range filteredBySelection {
 		// Search in ID, Subject, Status, Project, and Assignee
 		if strings.Contains(strings.ToLower(fmt.Sprintf("%d", issue.ID)), filterLower) ||
 			strings.Contains(strings.ToLower(issue.Subject), filterLower) ||

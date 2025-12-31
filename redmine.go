@@ -108,8 +108,11 @@ type Priority struct {
 }
 
 type User struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID        int    `json:"id"`
+	Login     string `json:"login"`
+	Firstname string `json:"firstname"`
+	Lastname  string `json:"lastname"`
+	Name      string `json:"name"`
 }
 
 type IssuesResponse struct {
@@ -213,4 +216,27 @@ func (c *Client) GetProjects(limit, offset int) (*ProjectsResponse, error) {
 	}
 
 	return &response, nil
+}
+
+// GetUsers fetches all active users
+func (c *Client) GetUsers(limit, offset int) ([]User, error) {
+	params := url.Values{}
+	params.Set("limit", fmt.Sprintf("%d", limit))
+	params.Set("offset", fmt.Sprintf("%d", offset))
+	params.Set("status", "1") // 1 = active users only
+
+	path := fmt.Sprintf("/users.json?%s", params.Encode())
+	data, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Users []User `json:"users"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, err
+	}
+
+	return response.Users, nil
 }

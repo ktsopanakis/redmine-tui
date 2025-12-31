@@ -206,6 +206,13 @@ func (m model) View() string {
 	// Combine panes side by side
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 
+	// If in list selection mode, overlay the list on top
+	if m.userInputMode == "user" || m.userInputMode == "project" {
+		listOverlay := m.renderListOverlay()
+		// Overlay on top of the panes
+		panes = m.overlayListOnPanes(panes, listOverlay)
+	}
+
 	// Footer with adaptive options
 	var footer string
 	if m.filterMode {
@@ -216,18 +223,18 @@ func (m model) View() string {
 			Render("Filter: ")
 		footer = footerStyle.Width(m.width).Render(filterPrompt + m.filterInput.View())
 	} else if m.userInputMode == "user" {
-		// Show user input in footer
+		// Show user filter input in footer
 		userPrompt := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#C678DD")).
+			Foreground(lipgloss.Color("#61AFEF")).
 			Bold(true).
-			Render("User: ")
+			Render("Filter Users: ")
 		footer = footerStyle.Width(m.width).Render(userPrompt + m.filterInput.View())
 	} else if m.userInputMode == "project" {
-		// Show project input in footer
+		// Show project filter input in footer
 		projectPrompt := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#98C379")).
 			Bold(true).
-			Render("Project: ")
+			Render("Filter Projects: ")
 		footer = footerStyle.Width(m.width).Render(projectPrompt + m.filterInput.View())
 	} else {
 		footer = footerStyle.Width(m.width).Render(m.getFooterText())
@@ -290,3 +297,34 @@ func (m model) getFooterText() string {
 
 	return text
 }
+
+// overlayListOnPanes overlays the list selection on top of the panes
+func (m model) overlayListOnPanes(panes, listOverlay string) string {
+	panesLines := strings.Split(panes, "\n")
+	overlayLines := strings.Split(listOverlay, "\n")
+
+	// Calculate where to start overlaying (from bottom)
+	startLine := len(panesLines) - len(overlayLines)
+	if startLine < 0 {
+		startLine = 0
+	}
+
+	// Keep all background lines, only overlay where the list actually is
+	result := make([]string, len(panesLines))
+	copy(result, panesLines) // Keep all original lines
+
+	// Only replace the lines where the overlay actually appears
+	for i, overlayLine := range overlayLines {
+		lineIdx := startLine + i
+		if lineIdx >= 0 && lineIdx < len(result) {
+			// Only replace non-empty overlay lines to preserve background
+			if strings.TrimSpace(overlayLine) != "" {
+				result[lineIdx] = overlayLine
+			}
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// renderListOverlay renders the user/project selection list overlay
