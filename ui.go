@@ -17,25 +17,25 @@ func (m model) View() string {
 	now := time.Now()
 	dayOfWeek := now.Format("Monday")
 	dateTime := now.Format("2006-01-02 15:04:05")
-	
+
 	// Build header with background on each element to preserve colors
 	bg := lipgloss.Color(settings.Colors.HeaderBackground)
-	
+
 	icon := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFFFFF")).
 		Background(bg).
 		Bold(true).
 		Render("◆")
-	
+
 	space := lipgloss.NewStyle().Background(bg).Render(" ")
-	
+
 	// More contrasty yellow for URL
 	url := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFD700")).
 		Background(bg).
 		Bold(true).
 		Render(settings.Redmine.URL)
-	
+
 	// Build right side: username | day date time
 	username := ""
 	if m.currentUser != nil {
@@ -47,19 +47,19 @@ func (m model) View() string {
 			Background(bg).
 			Render(" | ")
 	}
-	
+
 	day := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#61AFEF")).
 		Background(bg).
 		Render(dayOfWeek)
-	
+
 	timeDisplay := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#98C379")).
 		Background(bg).
 		Render(" " + dateTime)
-	
+
 	rightSide := username + day + timeDisplay
-	
+
 	// Calculate spacing
 	leftLen := 1 + 1 + len(settings.Redmine.URL)
 	rightLen := 0
@@ -67,12 +67,12 @@ func (m model) View() string {
 		rightLen = len(m.currentUser.Name) + 3 // name + " | "
 	}
 	rightLen += len(dayOfWeek) + 1 + len(dateTime) // day + space + datetime
-	
+
 	spacer := ""
 	if m.width > leftLen+rightLen+1 {
 		spacer = lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", m.width-leftLen-rightLen-1))
 	}
-	
+
 	header := lipgloss.NewStyle().
 		Background(bg).
 		PaddingLeft(1).
