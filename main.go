@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 
 	// Build program options
-	opts := []tea.ProgramOption{tea.WithMouseCellMotion()}
+	var opts []tea.ProgramOption
 	if *altScreen {
 		opts = append(opts, tea.WithAltScreen())
 	}

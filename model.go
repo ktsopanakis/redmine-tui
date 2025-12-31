@@ -1,11 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
-	"fmt"
-	"os"
-	"strings"
-
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -42,18 +37,15 @@ Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saep
 Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.`
 
 type model struct {
-	ready         bool
-	width         int
-	height        int
-	leftPane      viewport.Model
-	rightPane     viewport.Model
-	activePane    int
-	leftTitle     string
-	rightTitle    string
-	showHelp      bool
-	selectionMode bool
-	selectionLine int // Line number in the active viewport
-	selectionCol  int // Column position (character offset)
+	ready      bool
+	width      int
+	height     int
+	leftPane   viewport.Model
+	rightPane  viewport.Model
+	activePane int
+	leftTitle  string
+	rightTitle string
+	showHelp   bool
 }
 
 func initialModel() model {
@@ -115,78 +107,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showHelp = !m.showHelp
 			return m, nil
 
-		case "v":
-			// Toggle selection mode
-			m.selectionMode = !m.selectionMode
-			if m.selectionMode {
-				// Reset selection to start of visible content
-				m.selectionLine = 0
-				m.selectionCol = 0
-			}
-			return m, nil
-
-		case "y":
-			// Copy selected text to clipboard
-			if m.selectionMode {
-				text := m.getSelectedText()
-				if text != "" {
-					copyToClipboard(text)
-				}
-				m.selectionMode = false
-			}
-			return m, nil
-
 		case "tab":
 			// Switch between panes
-			if !m.selectionMode {
-				if m.activePane == 0 {
-					m.activePane = 1
-				} else {
-					m.activePane = 0
-				}
+			if m.activePane == 0 {
+				m.activePane = 1
+			} else {
+				m.activePane = 0
 			}
 
 		case "up", "k":
-			if m.selectionMode {
-				// Move selection up
-				if m.selectionLine > 0 {
-					m.selectionLine--
-				}
+			if m.activePane == 0 {
+				m.leftPane, cmd = m.leftPane.Update(msg)
 			} else {
-				if m.activePane == 0 {
-					m.leftPane, cmd = m.leftPane.Update(msg)
-				} else {
-					m.rightPane, cmd = m.rightPane.Update(msg)
-				}
-				cmds = append(cmds, cmd)
+				m.rightPane, cmd = m.rightPane.Update(msg)
 			}
+			cmds = append(cmds, cmd)
 
 		case "down", "j":
-			if m.selectionMode {
-				// Move selection down
-				m.selectionLine++
+			if m.activePane == 0 {
+				m.leftPane, cmd = m.leftPane.Update(msg)
 			} else {
-				if m.activePane == 0 {
-					m.leftPane, cmd = m.leftPane.Update(msg)
-				} else {
-					m.rightPane, cmd = m.rightPane.Update(msg)
-				}
-				cmds = append(cmds, cmd)
+				m.rightPane, cmd = m.rightPane.Update(msg)
 			}
-
-		case "left", "h":
-			if m.selectionMode {
-				// Move selection left
-				if m.selectionCol > 0 {
-					m.selectionCol--
-				}
-			}
-
-		case "right", "l":
-			if m.selectionMode {
-				// Move selection right
-				m.selectionCol++
-			}
+			cmds = append(cmds, cmd)
 
 		case "pgup", "b":
 			if m.activePane == 0 {
@@ -226,32 +169,4 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
-}
-
-// copyToClipboard copies text to the system clipboard using OSC 52 escape sequence
-func copyToClipboard(text string) {
-	// OSC 52 is a terminal escape sequence for copying to clipboard
-	// Format: \033]52;c;<base64-encoded-text>\007
-	encoded := base64.StdEncoding.EncodeToString([]byte(text))
-	osc52 := fmt.Sprintf("\033]52;c;%s\007", encoded)
-	fmt.Print(osc52)
-	os.Stdout.Sync()
-}
-
-// getSelectedText extracts the text at the current selection position
-func (m model) getSelectedText() string {
-	var content string
-	if m.activePane == 0 {
-		content = m.leftPane.View()
-	} else {
-		content = m.rightPane.View()
-	}
-
-	lines := strings.Split(content, "\n")
-	if m.selectionLine < 0 || m.selectionLine >= len(lines) {
-		return ""
-	}
-
-	// Return the entire current line
-	return lines[m.selectionLine]
 }

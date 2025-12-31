@@ -14,19 +14,6 @@ func (m model) View() string {
 	// Header
 	header := headerStyle.Width(m.width).Render("Redmine TUI")
 
-	// Get the active viewport content with selection highlighting if enabled
-	leftContent := m.leftPane.View()
-	rightContent := m.rightPane.View()
-
-	// Apply selection highlighting
-	if m.selectionMode {
-		if m.activePane == 0 {
-			leftContent = m.renderWithSelection(leftContent)
-		} else {
-			rightContent = m.renderWithSelection(rightContent)
-		}
-	}
-
 	// Left pane with title embedded in border
 	leftBorderColor := lipgloss.Color(settings.Colors.InactivePaneBorder)
 	if m.activePane == 0 {
@@ -38,7 +25,7 @@ func (m model) View() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(leftBorderColor).
 		Padding(0, 1).
-		Render(leftContent)
+		Render(m.leftPane.View())
 
 	// Embed title in the top border line
 	leftLines := strings.Split(leftPane, "\n")
@@ -81,7 +68,7 @@ func (m model) View() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(rightBorderColor).
 		Padding(0, 1).
-		Render(rightContent)
+		Render(m.rightPane.View())
 
 	// Embed title in the top border line
 	rightLines := strings.Split(rightPane, "\n")
@@ -134,26 +121,11 @@ func (m model) getFooterText() string {
 		"Tab: Switch",
 		"↑↓/jk: Scroll",
 		"PgUp/PgDn: Page",
-		"v: Select",
 		"?: Help",
 		"q: Quit",
 	}
 
-	// Show selection-specific commands if in selection mode
-	if m.selectionMode {
-		items = []string{
-			"↑↓←→/hjkl: Move",
-			"y: Copy",
-			"v: Exit",
-		}
-	}
-
-	required := []string{"q: Quit"}
-	if m.selectionMode {
-		required = []string{"v: Exit", "y: Copy"}
-	} else {
-		required = []string{"Tab: Switch", "q: Quit"}
-	}
+	required := []string{"Tab: Switch", "q: Quit"}
 
 	text := ""
 	for _, item := range items {
@@ -184,39 +156,5 @@ func (m model) getFooterText() string {
 		text += item
 	}
 
-	// Add selection mode indicator
-	if m.selectionMode {
-		text = "🔘 SELECTION MODE | " + text
-	}
-
 	return text
-}
-
-// renderWithSelection highlights the selected position in the content
-func (m model) renderWithSelection(content string) string {
-	lines := strings.Split(content, "\n")
-
-	if m.selectionLine < 0 || m.selectionLine >= len(lines) {
-		return content
-	}
-
-	line := lines[m.selectionLine]
-	if m.selectionCol < 0 || m.selectionCol >= len(line) {
-		return content
-	}
-
-	// Highlight the character at the selection position
-	highlightStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("#FFFF00")).
-		Foreground(lipgloss.Color("#000000"))
-
-	before := line[:m.selectionCol]
-	char := string(line[m.selectionCol])
-	after := ""
-	if m.selectionCol+1 < len(line) {
-		after = line[m.selectionCol+1:]
-	}
-
-	lines[m.selectionLine] = before + highlightStyle.Render(char) + after
-	return strings.Join(lines, "\n")
 }
