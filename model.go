@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -57,10 +58,17 @@ type model struct {
 	loading             bool
 	err                 error
 	currentUser         *User
+	filterMode          bool
+	filterInput         textinput.Model
+	filterText          string
 }
 
 func initialModel() model {
 	client := NewClient(settings.Redmine.URL, settings.Redmine.APIKey)
+	filterInput := textinput.New()
+	filterInput.Placeholder = "Type to filter issues..."
+	filterInput.CharLimit = 100
+	filterInput.Width = 50
 	return model{
 		leftTitle:     "Issues",
 		rightTitle:    "Details",
@@ -68,6 +76,7 @@ func initialModel() model {
 		client:        client,
 		selectedIndex: 0,
 		loading:       true,
+		filterInput:   filterInput,
 	}
 }
 
@@ -210,26 +219,69 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 
+		case "f":
+			if !m.filterMode {
+				// Enter filter mode
+				m.filterMode = true
+				// Keep current filter value in input for editing
+				m.filterInput.SetValue(m.filterText)
+				m.filterInput.Focus()
+				return m, textinput.Blink
+			}
+
+		case "esc":
+			if m.filterMode {
+				// Exit filter mode
+				m.filterMode = false
+				m.filterInput.Blur()
+				// Clear filter
+				m.filterText = ""
+				m.filterInput.SetValue("")
+				m.selectedIndex = 0
+				m.updatePaneContent()
+				return m, nil
+			}
+
 		case "?":
 			m.showHelp = !m.showHelp
 			return m, nil
 
 		case "tab":
-			// Switch between panes
-			if m.activePane == 0 {
-				m.activePane = 1
-			} else {
-				m.activePane = 0
+			if !m.filterMode {
+				// Switch between panes
+				if m.activePane == 0 {
+					m.activePane = 1
+				} else {
+					m.activePane = 0
+				}
+			}
+
+		case "enter":
+			if m.filterMode {
+				// Apply filter and exit filter mode
+				m.filterText = m.filterInput.Value()
+				m.filterMode = false
+				m.filterInput.Blur()
+				m.selectedIndex = 0
+				m.updatePaneContent()
+				return m, nil
 			}
 
 		case "up", "k":
-			if m.activePane == 0 && len(m.issues) > 0 {
-				// Navigate issues list
-				if m.selectedIndex > 0 {
-					m.selectedIndex--
-					m.updatePaneContent()
-					// Fetch details for selected issue
-					cmds = append(cmds, fetchIssueDetail(m.client, m.issues[m.selectedIndex].ID))
+			if m.filterMode {
+				// Don't navigate in filter mode
+				return m, nil
+			}
+			if m.activePane == 0 {
+				filteredIssues := m.getFilteredIssues()
+				if len(filteredIssues) > 0 {
+					// Navigate issues list
+					if m.selectedIndex > 0 {
+						m.selectedIndex--
+						m.updatePaneContent()
+						// Fetch details for selected issue
+						cmds = append(cmds, fetchIssueDetail(m.client, filteredIssues[m.selectedIndex].ID))
+					}
 				}
 			} else {
 				if m.activePane == 0 {
@@ -241,13 +293,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			if m.activePane == 0 && len(m.issues) > 0 {
-				// Navigate issues list
-				if m.selectedIndex < len(m.issues)-1 {
-					m.selectedIndex++
-					m.updatePaneContent()
-					// Fetch details for selected issue
-					cmds = append(cmds, fetchIssueDetail(m.client, m.issues[m.selectedIndex].ID))
+			if m.filterMode {
+				// Don't navigate in filter mode
+				return m, nil
+			}
+			if m.activePane == 0 {
+				filteredIssues := m.getFilteredIssues()
+				if len(filteredIssues) > 0 {
+					// Navigate issues list
+					if m.selectedIndex < len(filteredIssues)-1 {
+						m.selectedIndex++
+						m.updatePaneContent()
+						// Fetch details for selected issue
+						cmds = append(cmds, fetchIssueDetail(m.client, filteredIssues[m.selectedIndex].ID))
+					}
 				}
 			} else {
 				if m.activePane == 0 {
@@ -266,13 +325,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			cmds = append(cmds, cmd)
 
-		case "pgdown", "f":
+		case "pgdown":
 			if m.activePane == 0 {
 				m.leftPane, cmd = m.leftPane.Update(msg)
 			} else {
 				m.rightPane, cmd = m.rightPane.Update(msg)
 			}
 			cmds = append(cmds, cmd)
+
+		default:
+			// Handle text input in filter mode
+			if m.filterMode {
+				m.filterInput, cmd = m.filterInput.Update(msg)
+				cmds = append(cmds, cmd)
+			}
 		}
 
 	case tea.MouseMsg:
@@ -299,6 +365,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // updatePaneContent updates the viewport content based on current state
+func (m *model) getFilteredIssues() []Issue {
+	if m.filterText == "" {
+		return m.issues
+	}
+
+	filterLower := strings.ToLower(m.filterText)
+	filtered := []Issue{}
+	for _, issue := range m.issues {
+		// Search in ID, Subject, Status, Project, and Assignee
+		if strings.Contains(strings.ToLower(fmt.Sprintf("%d", issue.ID)), filterLower) ||
+			strings.Contains(strings.ToLower(issue.Subject), filterLower) ||
+			strings.Contains(strings.ToLower(issue.Status.Name), filterLower) ||
+			strings.Contains(strings.ToLower(issue.Project.Name), filterLower) ||
+			(issue.AssignedTo != nil && strings.Contains(strings.ToLower(issue.AssignedTo.Name), filterLower)) {
+			filtered = append(filtered, issue)
+		}
+	}
+	return filtered
+}
+
 func (m *model) updatePaneContent() {
 	if !m.ready {
 		return
@@ -306,12 +392,18 @@ func (m *model) updatePaneContent() {
 
 	// Left pane: List of issues with smart roller-style navigation
 	var leftContent string
+	filteredIssues := m.getFilteredIssues()
+
 	if m.loading {
 		leftContent = "Loading issues..."
 	} else if m.err != nil {
 		leftContent = fmt.Sprintf("Error: %v", m.err)
-	} else if len(m.issues) == 0 {
-		leftContent = "No issues found."
+	} else if len(filteredIssues) == 0 {
+		if m.filterText != "" {
+			leftContent = "No matching issues found."
+		} else {
+			leftContent = "No issues found."
+		}
 	} else {
 		// Each issue takes 3 lines (ID+Title, Status+Project, Assignee) + 1 blank line = 4 total
 		linesPerIssue := 4
@@ -324,9 +416,9 @@ func (m *model) updatePaneContent() {
 		if m.selectedIndex < visibleIssues/2 {
 			// Near the start - selection at top
 			startIdx = 0
-		} else if m.selectedIndex >= len(m.issues)-(visibleIssues/2) {
+		} else if m.selectedIndex >= len(filteredIssues)-(visibleIssues/2) {
 			// Near the end - selection at bottom
-			startIdx = len(m.issues) - visibleIssues
+			startIdx = len(filteredIssues) - visibleIssues
 			if startIdx < 0 {
 				startIdx = 0
 			}
@@ -336,13 +428,43 @@ func (m *model) updatePaneContent() {
 		}
 
 		endIdx := startIdx + visibleIssues
-		if endIdx > len(m.issues) {
-			endIdx = len(m.issues)
+		if endIdx > len(filteredIssues) {
+			endIdx = len(filteredIssues)
+		}
+
+		// Show active filter at the top if present
+		if m.filterText != "" {
+			filterStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#61AFEF")).
+				Bold(true)
+			filterValueStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#E5C07B"))
+			leftContent += filterStyle.Render("Filter: ") + filterValueStyle.Render(m.filterText) + "\n"
+			leftContent += lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(strings.Repeat("─", m.leftPane.Width)) + "\n\n"
+			// Reduce visible lines by 3 to account for filter display
+			visibleLines -= 3
+			visibleIssues = (visibleLines + 1) / linesPerIssue
+
+			// Recalculate indices with reduced space
+			if m.selectedIndex < visibleIssues/2 {
+				startIdx = 0
+			} else if m.selectedIndex >= len(filteredIssues)-(visibleIssues/2) {
+				startIdx = len(filteredIssues) - visibleIssues
+				if startIdx < 0 {
+					startIdx = 0
+				}
+			} else {
+				startIdx = m.selectedIndex - (visibleIssues / 2)
+			}
+			endIdx = startIdx + visibleIssues
+			if endIdx > len(filteredIssues) {
+				endIdx = len(filteredIssues)
+			}
 		}
 
 		// Build the content
 		for i := startIdx; i < endIdx; i++ {
-			issue := m.issues[i]
+			issue := filteredIssues[i]
 			isSelected := i == m.selectedIndex
 
 			// Styles for different components with vibrant colors
@@ -438,6 +560,13 @@ func (m *model) updatePaneContent() {
 
 	m.leftPane.SetContent(leftContent)
 
+	// Update left title with filter info
+	if m.filterText != "" {
+		m.leftTitle = fmt.Sprintf("Issues (%d/%d)", len(filteredIssues), len(m.issues))
+	} else {
+		m.leftTitle = "Issues"
+	}
+
 	// Right pane: Selected issue details
 	var rightContent string
 	if m.loading {
@@ -446,11 +575,11 @@ func (m *model) updatePaneContent() {
 	} else if m.err != nil {
 		rightContent = fmt.Sprintf("Error: %v", m.err)
 		m.rightTitle = "Details"
-	} else if len(m.issues) == 0 {
+	} else if len(filteredIssues) == 0 {
 		rightContent = "No issue selected."
 		m.rightTitle = "Details"
-	} else if m.selectedIndex >= 0 && m.selectedIndex < len(m.issues) {
-		issue := m.issues[m.selectedIndex]
+	} else if m.selectedIndex >= 0 && m.selectedIndex < len(filteredIssues) {
+		issue := filteredIssues[m.selectedIndex]
 
 		// Update title to show issue ID (plain text, styling happens in border)
 		m.rightTitle = fmt.Sprintf("#%d", issue.ID)

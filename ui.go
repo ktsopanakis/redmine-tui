@@ -207,7 +207,17 @@ func (m model) View() string {
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 
 	// Footer with adaptive options
-	footer := footerStyle.Width(m.width).Render(m.getFooterText())
+	var footer string
+	if m.filterMode {
+		// Show filter input in footer
+		filterPrompt := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#61AFEF")).
+			Bold(true).
+			Render("Filter: ")
+		footer = footerStyle.Width(m.width).Render(filterPrompt + m.filterInput.View())
+	} else {
+		footer = footerStyle.Width(m.width).Render(m.getFooterText())
+	}
 
 	// Combine all sections
 	return lipgloss.JoinVertical(
@@ -224,11 +234,13 @@ func (m model) getFooterText() string {
 		"Tab: Switch",
 		"↑↓/jk: Scroll",
 		"PgUp/PgDn: Page",
+		"f: Filter",
+		"Esc: Clear",
 		"?: Help",
 		"q: Quit",
 	}
 
-	required := []string{"Tab: Switch", "q: Quit"}
+	required := []string{"Tab: Switch", "f: Filter", "q: Quit"}
 
 	text := ""
 	for _, item := range items {
