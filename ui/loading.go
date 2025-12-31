@@ -91,7 +91,7 @@ func (m LoadingModel) Update(msg tea.Msg) (LoadingModel, tea.Cmd) {
 			}
 		}
 		m.messages = filtered
-		
+
 		// Auto-hide if no messages remain
 		if len(m.messages) == 0 {
 			m.Visible = false

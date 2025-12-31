@@ -135,7 +135,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Mark "Initializing application" as complete
 		cmds = append(cmds, ui.SendLoadingCompleteMsg())
-		
+
 		m.issues = msg.issues
 		if len(m.issues) > 0 {
 			m.selectedIndex = 0
