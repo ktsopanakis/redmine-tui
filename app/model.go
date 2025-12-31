@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -137,8 +138,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.issues) > 0 {
 			m.selectedIndex = 0
 			// Fetch details for first issue
+			cmds = append(cmds, ui.SendLoadingCompleteMsg()) // Mark issues fetch as complete
 			cmds = append(cmds, ui.SendLoadingMsg("Fetching issue details..."))
 			cmds = append(cmds, fetchIssueDetail(m.client, m.issues[0].ID))
+		} else {
+			cmds = append(cmds, ui.SendLoadingCompleteMsg())
 		}
 		// Update panes with content if ready
 		if m.ready {
@@ -158,16 +162,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.ready {
 				m.updatePaneContent()
 			}
-			// Hide loading indicator after first issue details loaded
-			m.loadingIndicator.Hide()
+			// Mark as complete and hide loading indicator after first issue details loaded
+			cmds = append(cmds, ui.SendLoadingCompleteMsg())
+
+			// Hide the entire indicator after a short delay
+			cmds = append(cmds, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				return hideLoadingMsg{}
+			}))
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case currentUserMsg:
 		if msg.err == nil && msg.user != nil {
 			m.currentUser = msg.user
+			cmds = append(cmds, ui.SendLoadingCompleteMsg())
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case usersLoadedMsg:
 		m.listLoading = false
@@ -176,8 +186,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.listCursor = 0
 			// Build initial filtered list
 			m.buildFilteredList()
+			cmds = append(cmds, ui.SendLoadingCompleteMsg())
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case projectsLoadedMsg:
 		m.listLoading = false
@@ -186,20 +197,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.listCursor = 0
 			// Build initial filtered list
 			m.buildFilteredList()
+			cmds = append(cmds, ui.SendLoadingCompleteMsg())
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case statusesLoadedMsg:
 		if msg.err == nil {
 			m.availableStatuses = msg.statuses
+			cmds = append(cmds, ui.SendLoadingCompleteMsg())
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case prioritiesLoadedMsg:
 		if msg.err == nil {
 			m.availablePriorities = msg.priorities
+			cmds = append(cmds, ui.SendLoadingCompleteMsg())
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case issueUpdatedMsg:
 		m.loading = false
@@ -207,13 +221,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editInput.Blur()
 		if msg.err == nil {
 			// Refresh the issue list and details
-			return m, tea.Batch(
-				ui.SendLoadingMsg("Refreshing issues..."),
-				fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
-				ui.SendLoadingMsg("Fetching updated issue..."),
-				fetchIssueDetail(m.client, msg.issueID),
-			)
+			cmds = append(cmds, ui.SendLoadingCompleteMsg())
+			cmds = append(cmds, ui.SendLoadingMsg("Refreshing issues..."))
+			cmds = append(cmds, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues))
+			cmds = append(cmds, ui.SendLoadingMsg("Fetching updated issue..."))
+			cmds = append(cmds, fetchIssueDetail(m.client, msg.issueID))
 		}
+		return m, tea.Batch(cmds...)
+
+	case hideLoadingMsg:
+		m.loadingIndicator.Hide()
 		return m, nil
 
 	case tickMsg:

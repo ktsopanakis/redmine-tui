@@ -11,12 +11,24 @@ import (
 )
 
 type LoadingMsg struct {
-	Message string
+	Message   string
+	Completed bool // true if marking as completed
+}
+
+type loadingMessage struct {
+	text        string
+	timestamp   time.Time
+	completed   bool
+	completedAt time.Time
+}
+
+type removeCompletedMsg struct {
+	timestamp time.Time
 }
 
 type LoadingModel struct {
 	spinner  spinner.Model
-	messages []string
+	messages []loadingMessage
 	maxLines int
 	Visible  bool
 	width    int
@@ -30,8 +42,8 @@ func NewLoadingModel() LoadingModel {
 
 	return LoadingModel{
 		spinner:  s,
-		messages: []string{},
-		maxLines: 6,
+		messages: []loadingMessage{},
+		maxLines: 8,
 		Visible:  true,
 		width:    0,
 		height:   0,
@@ -45,11 +57,40 @@ func (m LoadingModel) Init() tea.Cmd {
 func (m LoadingModel) Update(msg tea.Msg) (LoadingModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case LoadingMsg:
-		timestamp := time.Now().Format("15:04:05")
-		m.messages = append(m.messages, fmt.Sprintf("[%s] %s", timestamp, msg.Message))
-		if len(m.messages) > m.maxLines {
-			m.messages = m.messages[1:]
+		now := time.Now()
+		if msg.Completed {
+			// Mark the last in-progress message as completed
+			for i := len(m.messages) - 1; i >= 0; i-- {
+				if !m.messages[i].completed {
+					m.messages[i].completed = true
+					m.messages[i].completedAt = now
+					// Schedule removal after 5 seconds
+					return m, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+						return removeCompletedMsg{timestamp: m.messages[i].completedAt}
+					})
+				}
+			}
+		} else {
+			// Add new in-progress message
+			m.messages = append(m.messages, loadingMessage{
+				text:      msg.Message,
+				timestamp: now,
+				completed: false,
+			})
+			if len(m.messages) > m.maxLines*2 { // Keep more to handle cleanup
+				m.messages = m.messages[1:]
+			}
 		}
+		return m, nil
+	case removeCompletedMsg:
+		// Remove messages completed at the specified time
+		filtered := []loadingMessage{}
+		for _, lm := range m.messages {
+			if !lm.completed || !lm.completedAt.Equal(msg.timestamp) {
+				filtered = append(filtered, lm)
+			}
+		}
+		m.messages = filtered
 		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -70,16 +111,54 @@ func (m LoadingModel) View() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("63")).
 		Padding(0, 1).
-		MaxWidth(60).
+		MaxWidth(65).
 		Background(lipgloss.Color("235"))
 
-	b.WriteString(fmt.Sprintf("%s Loading API calls...\n", m.spinner.View()))
+	// Count in-progress messages
+	inProgress := 0
 	for _, msg := range m.messages {
-		// Truncate long messages
-		if len(msg) > 55 {
-			msg = msg[:52] + "..."
+		if !msg.completed {
+			inProgress++
 		}
-		b.WriteString(fmt.Sprintf("• %s\n", msg))
+	}
+
+	if inProgress > 0 {
+		b.WriteString(fmt.Sprintf("%s Loading API calls...\n", m.spinner.View()))
+	} else {
+		b.WriteString("✓ All operations complete\n")
+	}
+
+	// Show only the last maxLines messages
+	displayStart := 0
+	if len(m.messages) > m.maxLines {
+		displayStart = len(m.messages) - m.maxLines
+	}
+
+	for i := displayStart; i < len(m.messages); i++ {
+		msg := m.messages[i]
+		timestamp := msg.timestamp.Format("15:04:05")
+		text := msg.text
+
+		// Truncate long messages
+		if len(text) > 40 {
+			text = text[:37] + "..."
+		}
+
+		if msg.completed {
+			// Green checkmark for completed
+			completedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+			b.WriteString(fmt.Sprintf("%s [%s] %s\n",
+				completedStyle.Render("✓"),
+				timestamp,
+				text))
+		} else {
+			// Yellow dot for in-progress
+			inProgressStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+			b.WriteString(fmt.Sprintf("%s [%s] %s\n",
+				inProgressStyle.Render("●"),
+				timestamp,
+				text))
+		}
 	}
 
 	return style.Render(b.String())
@@ -100,6 +179,12 @@ func (m *LoadingModel) SetSize(width, height int) {
 
 func SendLoadingMsg(message string) tea.Cmd {
 	return func() tea.Msg {
-		return LoadingMsg{Message: message}
+		return LoadingMsg{Message: message, Completed: false}
+	}
+}
+
+func SendLoadingCompleteMsg() tea.Cmd {
+	return func() tea.Msg {
+		return LoadingMsg{Completed: true}
 	}
 }

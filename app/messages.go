@@ -39,6 +39,8 @@ type projectsLoadedMsg struct {
 
 type tickMsg time.Time
 
+type hideLoadingMsg struct{}
+
 // Fetch commands that return messages
 
 func fetchIssues(client *api.Client, viewMode string, assigneeFilter string, projectFilter string, issues []api.Issue) tea.Cmd {
