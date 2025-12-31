@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -13,7 +14,18 @@ func (m model) View() string {
 	}
 
 	// Header
-	header := headerStyle.Width(m.width).Render("Redmine TUI")
+	currentTime := time.Now().Format("2006-01-02 15:04:05")
+	// Use icon and lighter text colors that will be visible on background
+	headerLeft := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Render("◆ ") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B")).Render(settings.Redmine.URL)
+	headerRight := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379")).Render(currentTime)
+	// Calculate spacing - account for icon (1 char + space)
+	plainLen := len(settings.Redmine.URL) + 2 + len(currentTime)
+	headerContent := headerLeft
+	if m.width > plainLen {
+		headerContent += strings.Repeat(" ", m.width-plainLen) + headerRight
+	}
+	header := headerStyle.Width(m.width).Render(headerContent)
 
 	// Left pane with title embedded in border
 	leftBorderColor := lipgloss.Color(settings.Colors.InactivePaneBorder)
@@ -109,7 +121,7 @@ func (m model) View() string {
 		// Add dot indicator if active, use border lines before title
 		var titlePart string
 		if m.activePane == 1 {
-			// Active: border lines + dot + title
+			// Active: border lines + dot + title (white)
 			titlePart = "─ ● " + m.rightTitle + " "
 		} else {
 			// Inactive: border lines + title
@@ -123,10 +135,18 @@ func (m model) View() string {
 			} else {
 				remainingBorder = strings.Repeat("─", borderWidth-len(titlePart)+6)
 			}
-			newPlainLine := "╭" + titlePart + remainingBorder + "╮"
-			// Apply the border color
-			styledTopLine := lipgloss.NewStyle().Foreground(rightBorderColor).Render(newPlainLine)
-			rightLines[0] = styledTopLine
+			// Build border with styled title (white for ID)
+			whiteTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+			borderOnlyStyle := lipgloss.NewStyle().Foreground(rightBorderColor)
+
+			// Build the top line with proper coloring
+			newTopLine := borderOnlyStyle.Render("╭")
+			if m.activePane == 1 {
+				newTopLine += borderOnlyStyle.Render("─ ● ") + whiteTitleStyle.Render(m.rightTitle) + borderOnlyStyle.Render(" "+remainingBorder+"╮")
+			} else {
+				newTopLine += borderOnlyStyle.Render("─── ") + whiteTitleStyle.Render(m.rightTitle) + borderOnlyStyle.Render(" "+remainingBorder+"╮")
+			}
+			rightLines[0] = newTopLine
 			rightPane = strings.Join(rightLines, "\n")
 		}
 	}

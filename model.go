@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -74,6 +75,13 @@ type issuesLoadedMsg struct {
 	err    error
 }
 
+type issueDetailMsg struct {
+	issue *Issue
+	err   error
+}
+
+type tickMsg time.Time
+
 func fetchIssues(client *Client) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := client.GetIssues(0, true, true, 100, 0)
@@ -84,8 +92,24 @@ func fetchIssues(client *Client) tea.Cmd {
 	}
 }
 
+func fetchIssueDetail(client *Client, issueID int) tea.Cmd {
+	return func() tea.Msg {
+		issue, err := client.GetIssue(issueID)
+		if err != nil {
+			return issueDetailMsg{err: err}
+		}
+		return issueDetailMsg{issue: issue}
+	}
+}
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
 func (m model) Init() tea.Cmd {
-	return fetchIssues(m.client)
+	return tea.Batch(fetchIssues(m.client), tickCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -102,12 +126,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issues = msg.issues
 		if len(m.issues) > 0 {
 			m.selectedIndex = 0
+			// Fetch details for first issue
+			cmds = append(cmds, fetchIssueDetail(m.client, m.issues[0].ID))
 		}
 		// Update panes with content if ready
 		if m.ready {
 			m.updatePaneContent()
 		}
+		return m, tea.Batch(cmds...)
+
+	case issueDetailMsg:
+		if msg.err == nil && msg.issue != nil {
+			// Update the issue in the list with full details including journals
+			for i, issue := range m.issues {
+				if issue.ID == msg.issue.ID {
+					m.issues[i] = *msg.issue
+					break
+				}
+			}
+			if m.ready {
+				m.updatePaneContent()
+			}
+		}
 		return m, nil
+
+	case tickMsg:
+		// Time update - schedule next tick
+		return m, tickCmd()
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -163,6 +208,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectedIndex > 0 {
 					m.selectedIndex--
 					m.updatePaneContent()
+					// Fetch details for selected issue
+					cmds = append(cmds, fetchIssueDetail(m.client, m.issues[m.selectedIndex].ID))
 				}
 			} else {
 				if m.activePane == 0 {
@@ -179,6 +226,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectedIndex < len(m.issues)-1 {
 					m.selectedIndex++
 					m.updatePaneContent()
+					// Fetch details for selected issue
+					cmds = append(cmds, fetchIssueDetail(m.client, m.issues[m.selectedIndex].ID))
 				}
 			} else {
 				if m.activePane == 0 {
@@ -383,7 +432,7 @@ func (m *model) updatePaneContent() {
 	} else if m.selectedIndex >= 0 && m.selectedIndex < len(m.issues) {
 		issue := m.issues[m.selectedIndex]
 
-		// Update title to show issue ID
+		// Update title to show issue ID (plain text, styling happens in border)
 		m.rightTitle = fmt.Sprintf("#%d", issue.ID)
 
 		// Color styles matching the left pane
@@ -395,7 +444,7 @@ func (m *model) updatePaneContent() {
 		sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B")).Bold(true)  // Yellow
 
 		// Subject (title)
-		rightContent = titleStyle.Render(issue.Subject) + "\n\n"
+		rightContent = labelStyle.Render("Subject: ") + titleStyle.Render(issue.Subject) + "\n\n"
 
 		// Static information (color-coded)
 		rightContent += labelStyle.Render("Status: ") + statusStyle.Render(issue.Status.Name) + "  "
@@ -444,11 +493,19 @@ func (m *model) updatePaneContent() {
 				// Show property changes
 				if len(journal.Details) > 0 {
 					for _, detail := range journal.Details {
-						changeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))
+						fieldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF")).Bold(true) // Cyan for field name
+						oldValueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B"))         // Yellow/orange for old value
+						newValueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379"))         // Green for new value
+						arrowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))            // Gray arrow
+
 						if detail.OldValue != "" && detail.NewValue != "" {
-							rightContent += "  " + changeStyle.Render(fmt.Sprintf("%s: %s → %s", detail.Name, detail.OldValue, detail.NewValue)) + "\n"
+							rightContent += "  " + fieldStyle.Render(detail.Name+":") + " " +
+								oldValueStyle.Render(detail.OldValue) + " " +
+								arrowStyle.Render("→") + " " +
+								newValueStyle.Render(detail.NewValue) + "\n"
 						} else if detail.NewValue != "" {
-							rightContent += "  " + changeStyle.Render(fmt.Sprintf("%s: %s", detail.Name, detail.NewValue)) + "\n"
+							rightContent += "  " + fieldStyle.Render(detail.Name+":") + " " +
+								newValueStyle.Render(detail.NewValue) + "\n"
 						}
 					}
 				}
