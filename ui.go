@@ -154,7 +154,10 @@ func (m model) View() string {
 
 	// Right pane with title embedded in border
 	rightBorderColor := lipgloss.Color(settings.Colors.InactivePaneBorder)
-	if m.activePane == 1 {
+	if m.editMode && m.hasUnsavedChanges {
+		// Red border when editing with unsaved changes
+		rightBorderColor = lipgloss.Color("#E06C75") // Red
+	} else if m.activePane == 1 {
 		rightBorderColor = lipgloss.Color(settings.Colors.ActivePaneBorder)
 	}
 
@@ -222,6 +225,9 @@ func (m model) View() string {
 			Bold(true).
 			Render("Filter: ")
 		footer = footerStyle.Width(m.width).Render(filterPrompt + m.filterInput.View())
+	} else if m.editMode {
+		// Show edit mode footer
+		footer = footerStyle.Width(m.width).Render(m.renderEditFooter())
 	} else if m.userInputMode == "user" {
 		// Show user filter input in footer
 		userPrompt := lipgloss.NewStyle().
@@ -259,12 +265,13 @@ func (m model) getFooterText() string {
 		"m: My/All",
 		"u: User",
 		"p: Project",
+		"e: Edit",
 		"Esc: Clear",
 		"?: Help",
 		"q: Quit",
 	}
 
-	required := []string{"f: Filter", "m: My/All", "u: User", "p: Project", "q: Quit"}
+	required := []string{"f: Filter", "m: My/All", "e: Edit", "q: Quit"}
 
 	text := ""
 	for _, item := range items {

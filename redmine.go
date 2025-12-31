@@ -240,3 +240,55 @@ func (c *Client) GetUsers(limit, offset int) ([]User, error) {
 
 	return response.Users, nil
 }
+
+// UpdateIssue updates an issue
+func (c *Client) UpdateIssue(issueID int, updates map[string]interface{}) error {
+	payload := map[string]interface{}{
+		"issue": updates,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("/issues/%d.json", issueID)
+	_, err = c.doRequest("PUT", path, strings.NewReader(string(jsonData)))
+	return err
+}
+
+// GetStatuses fetches all available issue statuses
+func (c *Client) GetStatuses() ([]Status, error) {
+	path := "/issue_statuses.json"
+	data, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		IssueStatuses []Status `json:"issue_statuses"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, err
+	}
+
+	return response.IssueStatuses, nil
+}
+
+// GetPriorities fetches all available issue priorities
+func (c *Client) GetPriorities() ([]Priority, error) {
+	path := "/enumerations/issue_priorities.json"
+	data, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		IssuePriorities []Priority `json:"issue_priorities"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, err
+	}
+
+	return response.IssuePriorities, nil
+}

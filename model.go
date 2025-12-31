@@ -78,6 +78,18 @@ type model struct {
 	listLoading          bool           // loading list data
 	listFilterText       string         // filter text for list items
 	filteredIndices      []int          // indices of filtered items in original list
+
+	// Edit mode state
+	editMode            bool              // whether edit mode is active
+	editFieldIndex      int               // which field is currently selected for editing
+	editInput           textinput.Model   // input for editing
+	editingIssueID      int               // ID of the issue being edited
+	availableStatuses   []Status          // available statuses for selection
+	availablePriorities []Priority        // available priorities for selection
+	hasUnsavedChanges   bool              // whether there are unsaved changes in edit mode
+	editOriginalValue   string            // original value before editing
+	pendingEdits        map[string]string // fieldName -> new value for all pending edits
+	originalValues      map[string]string // fieldName -> original value for comparison
 }
 
 func initialModel() model {
@@ -86,6 +98,12 @@ func initialModel() model {
 	filterInput.Placeholder = "Type to filter issues..."
 	filterInput.CharLimit = 100
 	filterInput.Width = 50
+
+	editInput := textinput.New()
+	editInput.Placeholder = "Enter value..."
+	editInput.CharLimit = 500
+	editInput.Width = 50
+
 	return model{
 		leftTitle:        "Issues",
 		rightTitle:       "Details",
@@ -94,9 +112,12 @@ func initialModel() model {
 		selectedIndex:    0,
 		loading:          true,
 		filterInput:      filterInput,
+		editInput:        editInput,
 		viewMode:         "my",
 		selectedUsers:    make(map[int]bool),
 		selectedProjects: make(map[int]bool),
+		editMode:         false,
+		editFieldIndex:   0,
 	}
 }
 
@@ -305,6 +326,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case statusesLoadedMsg:
+		if msg.err == nil {
+			m.availableStatuses = msg.statuses
+		}
+		return m, nil
+
+	case prioritiesLoadedMsg:
+		if msg.err == nil {
+			m.availablePriorities = msg.priorities
+		}
+		return m, nil
+
+	case issueUpdatedMsg:
+		m.loading = false
+		m.editMode = false
+		m.editInput.Blur()
+		if msg.err == nil {
+			// Refresh the issue list and details
+			return m, tea.Batch(
+				fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
+				fetchIssueDetail(m.client, msg.issueID),
+			)
+		}
+		return m, nil
+
 	case tickMsg:
 		// Time update - schedule next tick
 		return m, tickCmd()
@@ -342,14 +388,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Check if we're in any input mode - if so, only handle esc, enter, and pass to input
-		inInputMode := m.filterMode || m.userInputMode != ""
+		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode
 
 		switch msg.String() {
 		case "ctrl+c", "q":
+			if m.editMode && m.hasUnsavedChanges {
+				// Warn about unsaved changes but allow quit
+				m.editMode = false
+				m.hasUnsavedChanges = false
+				m.editInput.Blur()
+				// Could add a confirmation dialog here, but for now just quit
+				return m, tea.Quit
+			} else if m.editMode {
+				// Exit edit mode without saving
+				m.editMode = false
+				m.editInput.Blur()
+				return m, nil
+			}
 			return m, tea.Quit
 
 		case "esc":
-			if m.filterMode {
+			if m.editMode {
+				// Exit edit mode without saving - clear all pending edits
+				m.editMode = false
+				m.hasUnsavedChanges = false
+				m.pendingEdits = make(map[string]string)
+				m.originalValues = make(map[string]string)
+				m.editInput.Blur()
+				m.updatePaneContent()
+				return m, nil
+			} else if m.filterMode {
 				// Exit filter mode
 				m.filterMode = false
 				m.filterInput.Blur()
@@ -368,8 +436,71 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+		case "ctrl+s":
+			if m.editMode && len(m.pendingEdits) > 0 {
+				// Save current field to pending before submitting
+				if m.editFieldIndex < len(editableFields) {
+					field := editableFields[m.editFieldIndex]
+					currentValue := m.editInput.Value()
+					originalValue := m.originalValues[field.Name]
+					if currentValue != originalValue {
+						m.pendingEdits[field.Name] = currentValue
+					} else {
+						delete(m.pendingEdits, field.Name)
+					}
+				}
+
+				// Save all pending changes at once
+				if len(m.pendingEdits) > 0 {
+					filteredIssues := m.getFilteredIssues()
+					if m.selectedIndex >= 0 && m.selectedIndex < len(filteredIssues) {
+						issueID := filteredIssues[m.selectedIndex].ID
+						m.editingIssueID = issueID
+						m.loading = true
+						m.hasUnsavedChanges = false
+						m.editMode = false
+						m.editInput.Blur()
+						return m, updateIssueMultiple(m.client, issueID, m.pendingEdits, m)
+					}
+				}
+			}
+			return m, nil
+
 		case "enter":
-			if m.filterMode {
+			if m.editMode {
+				// Save current field edit to pending edits before moving to next
+				if m.editFieldIndex < len(editableFields) {
+					field := editableFields[m.editFieldIndex]
+					currentValue := m.editInput.Value()
+					originalValue := m.originalValues[field.Name]
+					if currentValue != originalValue {
+						m.pendingEdits[field.Name] = currentValue
+					} else {
+						// Remove from pending if reverted to original
+						delete(m.pendingEdits, field.Name)
+					}
+				}
+
+				// Cycle to next field (like Tab)
+				m.editFieldIndex = (m.editFieldIndex + 1) % len(editableFields)
+
+				// Update input field with current value (from pending edits or original)
+				filteredIssues := m.getFilteredIssues()
+				if m.selectedIndex >= 0 && m.selectedIndex < len(filteredIssues) {
+					field := editableFields[m.editFieldIndex]
+					// Check if there's a pending edit for this field
+					if pendingValue, exists := m.pendingEdits[field.Name]; exists {
+						m.editInput.SetValue(pendingValue)
+					} else {
+						m.editInput.SetValue(m.originalValues[field.Name])
+					}
+					m.editOriginalValue = m.originalValues[field.Name]
+				}
+				m.hasUnsavedChanges = len(m.pendingEdits) > 0
+				m.editInput.Focus()
+				m.updatePaneContent()
+				return m, nil
+			} else if m.filterMode {
 				// Apply filter and exit filter mode
 				m.filterText = m.filterInput.Value()
 				m.filterMode = false
@@ -487,7 +618,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "up", "k":
-			if m.userInputMode == "user" && len(m.filteredIndices) > 0 {
+			if m.editMode && m.editFieldIndex < len(editableFields) {
+				field := editableFields[m.editFieldIndex]
+				if field.Type == "select" {
+					// Cycle through select options backwards
+					options := field.GetOptions(&m)
+					if len(options) > 0 {
+						currentValue := m.editInput.Value()
+						currentIndex := -1
+						for i, opt := range options {
+							if opt == currentValue {
+								currentIndex = i
+								break
+							}
+						}
+						nextIndex := (currentIndex - 1 + len(options)) % len(options)
+						m.editInput.SetValue(options[nextIndex])
+						m.hasUnsavedChanges = true
+						m.updatePaneContent()
+					}
+					return m, nil
+				}
+			} else if m.userInputMode == "user" && len(m.filteredIndices) > 0 {
 				// Navigate user list
 				if m.listCursor > 0 {
 					m.listCursor--
@@ -524,7 +676,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			if m.userInputMode == "user" && len(m.filteredIndices) > 0 {
+			if m.editMode && m.editFieldIndex < len(editableFields) {
+				field := editableFields[m.editFieldIndex]
+				if field.Type == "select" {
+					// Cycle through select options forwards
+					options := field.GetOptions(&m)
+					if len(options) > 0 {
+						currentValue := m.editInput.Value()
+						currentIndex := -1
+						for i, opt := range options {
+							if opt == currentValue {
+								currentIndex = i
+								break
+							}
+						}
+						nextIndex := (currentIndex + 1) % len(options)
+						m.editInput.SetValue(options[nextIndex])
+						m.hasUnsavedChanges = true
+						m.updatePaneContent()
+					}
+					return m, nil
+				}
+			} else if m.userInputMode == "user" && len(m.filteredIndices) > 0 {
 				// Navigate user list
 				if m.listCursor < len(m.filteredIndices)-1 {
 					m.listCursor++
@@ -585,7 +758,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 
 		case " ": // Space key
-			if m.userInputMode == "user" && len(m.filteredIndices) > 0 && m.listCursor < len(m.filteredIndices) {
+			if m.editMode {
+				// Pass space to edit input
+				m.editInput, cmd = m.editInput.Update(msg)
+				cmds = append(cmds, cmd)
+				m.hasUnsavedChanges = (m.editInput.Value() != m.editOriginalValue)
+				m.updatePaneContent()
+				return m, tea.Batch(cmds...)
+			} else if m.userInputMode == "user" && len(m.filteredIndices) > 0 && m.listCursor < len(m.filteredIndices) {
 				// Toggle selection of current user
 				user := m.availableUsers[m.filteredIndices[m.listCursor]]
 				m.selectedUsers[user.ID] = !m.selectedUsers[user.ID]
@@ -598,8 +778,52 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		default:
-			// Handle text input in filter mode or user input mode
-			if inInputMode {
+			// Handle text input in filter mode or user input mode or edit mode
+			if m.editMode {
+				// In edit mode, handle Tab separately
+				if msg.String() == "tab" {
+					// Save current field edit to pending edits before moving to next
+					if m.editFieldIndex < len(editableFields) {
+						field := editableFields[m.editFieldIndex]
+						currentValue := m.editInput.Value()
+						originalValue := m.originalValues[field.Name]
+						if currentValue != originalValue {
+							m.pendingEdits[field.Name] = currentValue
+						} else {
+							delete(m.pendingEdits, field.Name)
+						}
+					}
+
+					// Cycle through editable fields
+					m.editFieldIndex = (m.editFieldIndex + 1) % len(editableFields)
+
+					// Update input field with current value (from pending edits or original)
+					filteredIssues := m.getFilteredIssues()
+					if m.selectedIndex >= 0 && m.selectedIndex < len(filteredIssues) {
+						field := editableFields[m.editFieldIndex]
+						// Check if there's a pending edit for this field
+						if pendingValue, exists := m.pendingEdits[field.Name]; exists {
+							m.editInput.SetValue(pendingValue)
+						} else {
+							m.editInput.SetValue(m.originalValues[field.Name])
+						}
+						m.editOriginalValue = m.originalValues[field.Name]
+					}
+					m.hasUnsavedChanges = len(m.pendingEdits) > 0
+					m.editInput.Focus()
+					m.updatePaneContent()
+					return m, nil
+				}
+				// Pass other keys to edit input and update pane in real-time
+				m.editInput, cmd = m.editInput.Update(msg)
+				cmds = append(cmds, cmd)
+				// Check if current field has changes
+				currentFieldChanged := (m.editInput.Value() != m.editOriginalValue)
+				// Update hasUnsavedChanges based on pending edits + current field
+				m.hasUnsavedChanges = (len(m.pendingEdits) > 0 || currentFieldChanged)
+				// Update pane immediately to show changes
+				m.updatePaneContent()
+			} else if inInputMode {
 				m.filterInput, cmd = m.filterInput.Update(msg)
 				cmds = append(cmds, cmd)
 				// Update list filter text when in list mode
@@ -611,6 +835,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				// Handle command keys when NOT in input mode
 				switch msg.String() {
+				case "e":
+					// Enter edit mode
+					filteredIssues := m.getFilteredIssues()
+					if len(filteredIssues) > 0 && m.selectedIndex < len(filteredIssues) {
+						m.editMode = true
+						m.editFieldIndex = 0
+						m.pendingEdits = make(map[string]string)
+						m.originalValues = make(map[string]string)
+
+						// Store all original values
+						issue := filteredIssues[m.selectedIndex]
+						for _, field := range editableFields {
+							m.originalValues[field.Name] = field.GetValue(&issue)
+						}
+
+						// Load statuses and priorities if not already loaded
+						var cmds []tea.Cmd
+						if len(m.availableStatuses) == 0 {
+							cmds = append(cmds, fetchStatuses(m.client))
+						}
+						if len(m.availablePriorities) == 0 {
+							cmds = append(cmds, fetchPriorities(m.client))
+						}
+						if len(m.availableUsers) == 0 {
+							cmds = append(cmds, fetchUsers(m.client))
+						}
+
+						// Set initial value in edit input
+						field := editableFields[m.editFieldIndex]
+						currentValue := field.GetValue(&issue)
+						m.editInput.SetValue(currentValue)
+						m.editOriginalValue = currentValue
+						m.hasUnsavedChanges = false
+						m.editInput.Focus()
+
+						m.updatePaneContent()
+						cmds = append(cmds, textinput.Blink)
+						return m, tea.Batch(cmds...)
+					}
+					return m, nil
 				case "f":
 					// Enter filter mode
 					m.filterMode = true
@@ -1028,12 +1292,72 @@ func (m *model) updatePaneContent() {
 		titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Bold(true)    // White, bold
 		sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B")).Bold(true)  // Yellow
 
-		// Subject (title)
-		rightContent = labelStyle.Render("Subject: ") + titleStyle.Render(issue.Subject) + "\n\n"
+		// Highlight style for edit mode
+		highlightStyle := getFieldHighlightStyle()
+		currentField := ""
+		editedValue := ""
+		if m.editMode && m.editFieldIndex < len(editableFields) {
+			currentField = editableFields[m.editFieldIndex].Name
+			editedValue = m.editInput.Value()
+		}
+
+		// Helper function to get display value (edited or original)
+		getDisplayValue := func(fieldName string, originalValue string) string {
+			// Check pending edits first
+			if pendingValue, exists := m.pendingEdits[fieldName]; exists {
+				return pendingValue
+			}
+			// Then check if it's the currently edited field
+			if currentField == fieldName && editedValue != "" {
+				return editedValue
+			}
+			return originalValue
+		}
+
+		// Display pending edits summary at the top if any exist
+		if m.editMode && len(m.pendingEdits) > 0 {
+			pendingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B")).Bold(true) // Yellow
+			oldValueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#E06C75"))           // Red
+			newValueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379"))           // Green
+			arrowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))              // Gray
+
+			rightContent = pendingStyle.Render("PENDING CHANGES:") + "\n"
+			for _, field := range editableFields {
+				if newValue, exists := m.pendingEdits[field.Name]; exists {
+					oldValue := m.originalValues[field.Name]
+					rightContent += "  " + labelStyle.Render(field.DisplayName+":") + " " +
+						oldValueStyle.Render(oldValue) + " " +
+						arrowStyle.Render("→") + " " +
+						newValueStyle.Render(newValue) + "\n"
+				}
+			}
+			rightContent += "\n"
+		}
+
+		// Subject (title) - field 0
+		subjectValue := getDisplayValue("subject", issue.Subject)
+		if currentField == "subject" {
+			rightContent = labelStyle.Render("Subject: ") + highlightStyle.Render(subjectValue) + "\n\n"
+		} else {
+			rightContent = labelStyle.Render("Subject: ") + titleStyle.Render(subjectValue) + "\n\n"
+		}
 
 		// Static information (color-coded)
-		rightContent += labelStyle.Render("Status: ") + statusStyle.Render(issue.Status.Name) + "  "
-		rightContent += labelStyle.Render("Priority: ") + statusStyle.Render(issue.Priority.Name) + "\n"
+		// Status - field 2
+		statusValue := getDisplayValue("status_id", issue.Status.Name)
+		if currentField == "status_id" {
+			rightContent += labelStyle.Render("Status: ") + highlightStyle.Render(statusValue) + "  "
+		} else {
+			rightContent += labelStyle.Render("Status: ") + statusStyle.Render(statusValue) + "  "
+		}
+
+		// Priority - field 3
+		priorityValue := getDisplayValue("priority_id", issue.Priority.Name)
+		if currentField == "priority_id" {
+			rightContent += labelStyle.Render("Priority: ") + highlightStyle.Render(priorityValue) + "\n"
+		} else {
+			rightContent += labelStyle.Render("Priority: ") + statusStyle.Render(priorityValue) + "\n"
+		}
 
 		rightContent += labelStyle.Render("Project: ") + projectStyle.Render(issue.Project.Name) + "  "
 		rightContent += labelStyle.Render("Tracker: ") + projectStyle.Render(issue.Tracker.Name) + "\n"
@@ -1042,27 +1366,55 @@ func (m *model) updatePaneContent() {
 		if issue.AssignedTo != nil {
 			assignee = issue.AssignedTo.Name
 		}
-		rightContent += labelStyle.Render("Assigned: ") + assigneeStyle.Render(assignee) + "  "
+		// Assigned - field 4
+		assigneeValue := getDisplayValue("assigned_to_id", assignee)
+		if currentField == "assigned_to_id" {
+			rightContent += labelStyle.Render("Assigned: ") + highlightStyle.Render(assigneeValue) + "  "
+		} else {
+			rightContent += labelStyle.Render("Assigned: ") + assigneeStyle.Render(assigneeValue) + "  "
+		}
 		rightContent += labelStyle.Render("Author: ") + assigneeStyle.Render(issue.Author.Name) + "\n"
 
-		rightContent += labelStyle.Render("Progress: ") + statusStyle.Render(fmt.Sprintf("%d%%", issue.DoneRatio))
+		// Progress - field 5
+		progressText := fmt.Sprintf("%d%%", issue.DoneRatio)
+		progressValue := getDisplayValue("done_ratio", progressText)
+		if currentField == "done_ratio" {
+			rightContent += labelStyle.Render("Progress: ") + highlightStyle.Render(progressValue)
+		} else {
+			rightContent += labelStyle.Render("Progress: ") + statusStyle.Render(progressValue)
+		}
 		if issue.StartDate != "" {
 			rightContent += "  " + labelStyle.Render("Start: ") + issue.StartDate
 		}
-		if issue.DueDate != "" {
-			rightContent += "  " + labelStyle.Render("Due: ") + issue.DueDate
+		// Due Date - field 6
+		dueValue := getDisplayValue("due_date", issue.DueDate)
+		if issue.DueDate != "" || currentField == "due_date" {
+			if currentField == "due_date" {
+				rightContent += "  " + labelStyle.Render("Due: ") + highlightStyle.Render(dueValue)
+			} else {
+				rightContent += "  " + labelStyle.Render("Due: ") + dueValue
+			}
 		}
 		rightContent += "\n"
 
 		rightContent += labelStyle.Render("Created: ") + issue.CreatedOn.Format("2006-01-02 15:04") + "  "
 		rightContent += labelStyle.Render("Updated: ") + issue.UpdatedOn.Format("2006-01-02 15:04") + "\n\n"
 
-		// Description section
+		// Description section - field 1
 		rightContent += sectionStyle.Render("━━━ DESCRIPTION ") + sectionStyle.Render(strings.Repeat("━", m.rightPane.Width-17)) + "\n\n"
-		if issue.Description != "" {
-			rightContent += issue.Description + "\n"
+		descValue := getDisplayValue("description", issue.Description)
+		if descValue != "" {
+			if currentField == "description" {
+				rightContent += highlightStyle.Render(descValue) + "\n"
+			} else {
+				rightContent += descValue + "\n"
+			}
 		} else {
-			rightContent += lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("No description provided.") + "\n"
+			if currentField == "description" {
+				rightContent += highlightStyle.Render("No description provided.") + "\n"
+			} else {
+				rightContent += lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("No description provided.") + "\n"
+			}
 		}
 
 		// History and notes section
