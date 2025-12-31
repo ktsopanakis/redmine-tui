@@ -175,6 +175,7 @@ func OverlayInCorner(base, overlay string, width int, corner string) string {
 	baseLines := strings.Split(base, "\n")
 	overlayLines := strings.Split(overlay, "\n")
 
+	// Find the maximum visual width of overlay
 	overlayWidth := 0
 	for _, line := range overlayLines {
 		lineWidth := lipgloss.Width(line)
@@ -190,20 +191,20 @@ func OverlayInCorner(base, overlay string, width int, corner string) string {
 	switch corner {
 	case "top-right":
 		startRow = 1 // Leave 1 line for header
-		startCol = width - overlayWidth - 2
+		startCol = width - overlayWidth - 3
 	case "top-left":
 		startRow = 1
 		startCol = 2
 	case "bottom-right":
 		startRow = len(baseLines) - overlayHeight - 2
-		startCol = width - overlayWidth - 2
+		startCol = width - overlayWidth - 3
 	case "bottom-left":
 		startRow = len(baseLines) - overlayHeight - 2
 		startCol = 2
 	default:
 		// Default to top-right
 		startRow = 1
-		startCol = width - overlayWidth - 2
+		startCol = width - overlayWidth - 3
 	}
 
 	if startRow < 0 {
@@ -213,7 +214,7 @@ func OverlayInCorner(base, overlay string, width int, corner string) string {
 		startCol = 0
 	}
 
-	// Overlay the content
+	// Overlay the content line by line
 	result := make([]string, len(baseLines))
 	copy(result, baseLines)
 
@@ -224,23 +225,25 @@ func OverlayInCorner(base, overlay string, width int, corner string) string {
 		}
 
 		baseLine := result[row]
-		baseRunes := []rune(baseLine)
+		baseWidth := lipgloss.Width(baseLine)
+		overlayLineWidth := lipgloss.Width(overlayLine)
 
-		// Handle ANSI codes properly by using lipgloss width
-		if startCol+lipgloss.Width(overlayLine) > len(baseRunes) {
-			// Extend base line if needed
-			baseRunes = append(baseRunes, []rune(strings.Repeat(" ", startCol+lipgloss.Width(overlayLine)-len(baseRunes)))...)
+		// Build the new line by padding and placing overlay
+		var newLine string
+		
+		if startCol > baseWidth {
+			// Need to pad the base line
+			newLine = baseLine + strings.Repeat(" ", startCol-baseWidth) + overlayLine
+		} else if startCol + overlayLineWidth <= baseWidth {
+			// Overlay fits within existing line - we need to truncate base and add overlay
+			// This is complex with ANSI codes, so we'll just append
+			newLine = lipgloss.NewStyle().Width(startCol).Render(baseLine) + overlayLine
+		} else {
+			// Overlay extends beyond base line
+			newLine = lipgloss.NewStyle().Width(startCol).Render(baseLine) + overlayLine
 		}
 
-		// Simple overlay - just replace the section
-		beforeOverlay := string(baseRunes[:startCol])
-		afterOverlay := ""
-		afterStart := startCol + lipgloss.Width(overlayLine)
-		if afterStart < len(baseRunes) {
-			afterOverlay = string(baseRunes[afterStart:])
-		}
-
-		result[row] = beforeOverlay + overlayLine + afterOverlay
+		result[row] = newLine
 	}
 
 	return strings.Join(result, "\n")
