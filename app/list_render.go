@@ -54,7 +54,7 @@ func (m *Model) buildProjectListItems() []appui.ListItem {
 // updateFilteredIndices updates the filteredIndices based on the filtered list result
 func (m *Model) updateFilteredIndices(items []appui.ListItem) {
 	m.filteredIndices = []int{}
-	
+
 	if m.userInputMode == "user" {
 		// Map filtered items back to original indices
 		for _, item := range items {
@@ -95,7 +95,7 @@ func (m Model) renderListOverlay() string {
 		borderColor = "#61AFEF"
 		loadingMsg = "Loading users..."
 		emptyMsg = "No users found"
-		
+
 		// Create mutable copy to build list
 		mutableModel := m
 		items = mutableModel.buildUserListItems()
@@ -104,7 +104,7 @@ func (m Model) renderListOverlay() string {
 		borderColor = "#98C379"
 		loadingMsg = "Loading projects..."
 		emptyMsg = "No projects found"
-		
+
 		// Create mutable copy to build list
 		mutableModel := m
 		items = mutableModel.buildProjectListItems()
@@ -132,7 +132,7 @@ func (m Model) renderListOverlay() string {
 // buildFilteredList is kept for updating cursor and indices
 func (m *Model) buildFilteredList() {
 	var items []appui.ListItem
-	
+
 	if m.userInputMode == "user" {
 		items = m.buildUserListItems()
 	} else if m.userInputMode == "project" {
@@ -147,10 +147,10 @@ func (m *Model) buildFilteredList() {
 	}
 
 	result := appui.BuildFilteredList(cfg)
-	
+
 	// Update cursor
 	m.listCursor = result.UpdatedCursor
-	
+
 	// Update filtered indices
 	m.updateFilteredIndices(result.Items)
 }

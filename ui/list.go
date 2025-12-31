@@ -17,25 +17,25 @@ type ListItem struct {
 
 // ListConfig contains configuration for rendering a selection list
 type ListConfig struct {
-	Title            string            // Title/instructions for the list
-	Items            []ListItem        // All available items
-	Cursor           int               // Current cursor position
-	FilterText       string            // Current filter text
-	BorderColor      string            // Border color for the list box
-	Width            int               // Total width of the container
-	Height           int               // Total height of the container (for positioning)
-	MaxVisibleItems  int               // Maximum items to show before scrolling
-	IsLoading        bool              // Whether data is loading
-	LoadingMessage   string            // Message to show when loading
-	EmptyMessage     string            // Message to show when no items
-	ShowScrollInfo   bool              // Whether to show scroll position info
-	FilterFunc       func(item ListItem, filter string) bool // Custom filter function
+	Title           string                                  // Title/instructions for the list
+	Items           []ListItem                              // All available items
+	Cursor          int                                     // Current cursor position
+	FilterText      string                                  // Current filter text
+	BorderColor     string                                  // Border color for the list box
+	Width           int                                     // Total width of the container
+	Height          int                                     // Total height of the container (for positioning)
+	MaxVisibleItems int                                     // Maximum items to show before scrolling
+	IsLoading       bool                                    // Whether data is loading
+	LoadingMessage  string                                  // Message to show when loading
+	EmptyMessage    string                                  // Message to show when no items
+	ShowScrollInfo  bool                                    // Whether to show scroll position info
+	FilterFunc      func(item ListItem, filter string) bool // Custom filter function
 }
 
 // FilteredListResult contains the filtered list and updated indices
 type FilteredListResult struct {
-	Items           []ListItem
-	UpdatedCursor   int
+	Items         []ListItem
+	UpdatedCursor int
 }
 
 // BuildFilteredList filters and sorts items based on the filter text
