@@ -31,24 +31,15 @@ Or install latest:
 mise install https://github.com/ktsopanakis/redmine-tui.git@latest
 ```
 
-**Clone and build:**
+**With Go:**
 ```bash
-git clone https://github.com/ktsopanakis/redmine-tui.git
-cd redmine-tui
-mise trust               # Trust the mise config
-mise install             # Installs Go 1.25.4
-mise run install         # Builds and installs to $GOPATH/bin
-```
-
-**Direct install with Go:**
-```bash
-mise use -g go@1.25.4                                    # Install Go globally
-go install github.com/ktsopanakis/redmine-tui@latest    # Install directly
+mise use -g go@latest
+go install github.com/ktsopanakis/redmine-tui@latest
 ```
 
 ### Manual Installation
 
-Requires Go 1.25.4 or later:
+Requires Go 1.25 or later:
 
 ```bash
 git clone https://github.com/ktsopanakis/redmine-tui.git
@@ -58,14 +49,12 @@ go build
 
 ## Development Tasks
 
-With mise installed in the project directory:
+For local development, you can build and run directly:
 
 ```bash
-mise run build        # Build binary
-mise run install      # Install to $GOPATH/bin
-mise run dev          # Build and run
-mise run test         # Run tests
-mise run clean        # Remove binary
+go build                 # Build binary
+go install               # Install to $GOPATH/bin
+go test ./...            # Run tests
 ```
 
 ## Quick Start
