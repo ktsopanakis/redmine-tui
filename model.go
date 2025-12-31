@@ -68,14 +68,16 @@ type model struct {
 	userInputMode       string // "", "user", "project" - which input is active
 
 	// List selection state
-	availableUsers    []User
-	availableProjects []Project
-	selectedUsers     map[int]bool // user ID -> selected
-	selectedProjects  map[int]bool // project ID -> selected
-	listCursor        int          // cursor position in list
-	listLoading       bool         // loading list data
-	listFilterText    string       // filter text for list items
-	filteredIndices   []int        // indices of filtered items in original list
+	availableUsers       []User
+	availableProjects    []Project
+	selectedUsers        map[int]bool   // user ID -> selected
+	selectedProjects     map[int]bool   // project ID -> selected
+	selectedUserNames    map[int]string // user ID -> display name
+	selectedProjectNames map[int]string // project ID -> display name
+	listCursor           int            // cursor position in list
+	listLoading          bool           // loading list data
+	listFilterText       string         // filter text for list items
+	filteredIndices      []int          // indices of filtered items in original list
 }
 
 func initialModel() model {
@@ -173,6 +175,9 @@ func fetchIssues(client *Client, viewMode string, assigneeFilter string, project
 			resp, err = client.GetIssues(projectID, false, 0, true, 100, 0)
 		case "project-multi":
 			// Fetch all issues for client-side filtering by multiple projects
+			resp, err = client.GetIssues(0, false, 0, true, 100, 0)
+		case "user-project-multi":
+			// Fetch all issues for client-side filtering by both users and projects
 			resp, err = client.GetIssues(0, false, 0, true, 100, 0)
 		default:
 			// Default to all issues
@@ -373,32 +378,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updatePaneContent()
 				return m, nil
 			} else if m.userInputMode == "user" {
-				// Apply selected users
+				// Apply selected users - use client-side filtering for multiple users
 				selectedUserIDs := []int{}
-				selectedUserID := 0
 				for id, selected := range m.selectedUsers {
 					if selected {
 						selectedUserIDs = append(selectedUserIDs, id)
-						if selectedUserID == 0 {
-							selectedUserID = id
-						}
 					}
 				}
 
-				// Use first selected user ID for API filter
-				if len(selectedUserIDs) >= 1 {
-					m.viewMode = "user"
-					// Store user ID for API
-					for _, user := range m.availableUsers {
-						if m.selectedUsers[user.ID] {
-							m.assigneeFilter = fmt.Sprintf("%d", user.ID)
-							break
+				if len(selectedUserIDs) > 0 {
+					m.viewMode = "user-multi"
+					// Store selected IDs as comma-separated string and store names
+					if m.selectedUserNames == nil {
+						m.selectedUserNames = make(map[int]string)
+					}
+					var idStrings []string
+					for _, id := range selectedUserIDs {
+						idStrings = append(idStrings, fmt.Sprintf("%d", id))
+						// Store user name for display
+						for _, user := range m.availableUsers {
+							if user.ID == id {
+								displayName := user.Name
+								if displayName == "" {
+									if user.Firstname != "" || user.Lastname != "" {
+										displayName = strings.TrimSpace(user.Firstname + " " + user.Lastname)
+									} else if user.Login != "" {
+										displayName = user.Login
+									}
+								}
+								m.selectedUserNames[id] = displayName
+								break
+							}
 						}
 					}
+					m.assigneeFilter = strings.Join(idStrings, ",")
 				} else {
-					// No selection - show all
-					m.viewMode = "all"
+					// No selection - clear filter but keep view mode if project filter is active
 					m.assigneeFilter = ""
+					m.selectedUserNames = make(map[int]string)
+					if m.projectFilter == "" {
+						m.viewMode = "all"
+					}
 				}
 
 				m.userInputMode = ""
@@ -418,25 +438,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				if len(selectedProjectIDs) > 0 {
-					m.viewMode = "project-multi"
-					// Store selected IDs as comma-separated string
+					// Store selected IDs as comma-separated string and store names
+					if m.selectedProjectNames == nil {
+						m.selectedProjectNames = make(map[int]string)
+					}
 					var idStrings []string
 					for _, id := range selectedProjectIDs {
 						idStrings = append(idStrings, fmt.Sprintf("%d", id))
+						// Store project name for display
+						for _, project := range m.availableProjects {
+							if project.ID == id {
+								m.selectedProjectNames[id] = project.Name
+								break
+							}
+						}
 					}
 					m.projectFilter = strings.Join(idStrings, ",")
+					// Set view mode based on whether user filter is also active
+					if m.assigneeFilter != "" {
+						m.viewMode = "user-project-multi"
+					} else {
+						m.viewMode = "project-multi"
+					}
 				} else {
-					// No selection - show all
+					// No selection - clear filter but keep view mode if user filter is active
 					m.projectFilter = ""
+					m.selectedProjectNames = make(map[int]string)
+					if m.assigneeFilter == "" {
+						m.viewMode = "all"
+					} else {
+						m.viewMode = "user-multi"
+					}
 				}
 
 				m.userInputMode = ""
-				m.listFilterText = ""
-				m.filterInput.SetValue("")
-				m.filterInput.Blur()
-				m.loading = true
-				m.selectedIndex = 0
-				return m, fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues)
 				m.listFilterText = ""
 				m.filterInput.SetValue("")
 				m.filterInput.Blur()
@@ -652,37 +687,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updatePaneContent updates the viewport content based on current state
 func (m *model) getFilteredIssues() []Issue {
-	// First apply multi-user or multi-project filter if set
+	// First apply multi-user and/or multi-project filters if set
 	filteredBySelection := m.issues
 
-	if m.viewMode == "user-multi" && m.assigneeFilter != "" {
-		// Filter by multiple user IDs
+	// Build user ID map if user filter is active
+	var userIDMap map[string]bool
+	if m.assigneeFilter != "" {
 		userIDs := strings.Split(m.assigneeFilter, ",")
-		userIDMap := make(map[string]bool)
+		userIDMap = make(map[string]bool)
 		for _, id := range userIDs {
 			userIDMap[id] = true
 		}
+	}
 
-		var filtered []Issue
-		for _, issue := range m.issues {
-			if issue.AssignedTo != nil {
-				if userIDMap[fmt.Sprintf("%d", issue.AssignedTo.ID)] {
-					filtered = append(filtered, issue)
-				}
-			}
-		}
-		filteredBySelection = filtered
-	} else if m.viewMode == "project-multi" && m.projectFilter != "" {
-		// Filter by multiple project IDs
+	// Build project ID map if project filter is active
+	var projectIDMap map[string]bool
+	if m.projectFilter != "" {
 		projectIDs := strings.Split(m.projectFilter, ",")
-		projectIDMap := make(map[string]bool)
+		projectIDMap = make(map[string]bool)
 		for _, id := range projectIDs {
 			projectIDMap[id] = true
 		}
+	}
 
+	// Apply filters with AND logic when both are set
+	if userIDMap != nil || projectIDMap != nil {
 		var filtered []Issue
 		for _, issue := range m.issues {
-			if projectIDMap[fmt.Sprintf("%d", issue.Project.ID)] {
+			// Check user filter (OR across selected users)
+			userMatch := userIDMap == nil // If no user filter, pass this check
+			if !userMatch && issue.AssignedTo != nil {
+				userMatch = userIDMap[fmt.Sprintf("%d", issue.AssignedTo.ID)]
+			}
+
+			// Check project filter (OR across selected projects)
+			projectMatch := projectIDMap == nil // If no project filter, pass this check
+			if !projectMatch {
+				projectMatch = projectIDMap[fmt.Sprintf("%d", issue.Project.ID)]
+			}
+
+			// Include if both filters match (AND logic)
+			if userMatch && projectMatch {
 				filtered = append(filtered, issue)
 			}
 		}
@@ -756,17 +801,63 @@ func (m *model) updatePaneContent() {
 			endIdx = len(filteredIssues)
 		}
 
-		// Show active filter at the top if present
+		// Show active filters at the top if present
+		filterStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#61AFEF")).
+			Bold(true)
+		filterValueStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E5C07B"))
+
+		filterLinesAdded := 0
+
+		// Show selected users
+		if m.assigneeFilter != "" {
+			userNames := []string{}
+			userIDs := strings.Split(m.assigneeFilter, ",")
+			for _, idStr := range userIDs {
+				var id int
+				if _, err := fmt.Sscanf(idStr, "%d", &id); err == nil {
+					if name, ok := m.selectedUserNames[id]; ok {
+						userNames = append(userNames, name)
+					}
+				}
+			}
+			if len(userNames) > 0 {
+				leftContent += filterStyle.Render("Users: ") + filterValueStyle.Render(strings.Join(userNames, ", ")) + "\n"
+				filterLinesAdded++
+			}
+		}
+
+		// Show selected projects
+		if m.projectFilter != "" {
+			projectNames := []string{}
+			projectIDs := strings.Split(m.projectFilter, ",")
+			for _, idStr := range projectIDs {
+				var id int
+				if _, err := fmt.Sscanf(idStr, "%d", &id); err == nil {
+					if name, ok := m.selectedProjectNames[id]; ok {
+						projectNames = append(projectNames, name)
+					}
+				}
+			}
+			if len(projectNames) > 0 {
+				leftContent += filterStyle.Render("Projects: ") + filterValueStyle.Render(strings.Join(projectNames, ", ")) + "\n"
+				filterLinesAdded++
+			}
+		}
+
+		// Show text filter
 		if m.filterText != "" {
-			filterStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#61AFEF")).
-				Bold(true)
-			filterValueStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#E5C07B"))
 			leftContent += filterStyle.Render("Filter: ") + filterValueStyle.Render(m.filterText) + "\n"
+			filterLinesAdded++
+		}
+
+		// Add separator if any filters are active
+		if filterLinesAdded > 0 {
 			leftContent += lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(strings.Repeat("─", m.leftPane.Width)) + "\n\n"
-			// Reduce visible lines by 3 to account for filter display
-			visibleLines -= 3
+			filterLinesAdded += 2 // separator and blank line
+			// Reduce visible lines to account for filter display
+			visibleLines -= filterLinesAdded
 			visibleIssues = (visibleLines + 1) / linesPerIssue
 
 			// Recalculate indices with reduced space

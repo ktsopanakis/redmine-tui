@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -19,6 +20,10 @@ func (m *model) buildFilteredList() []filteredListItem {
 	m.filteredIndices = []int{} // Reset filtered indices
 
 	if m.userInputMode == "user" {
+		// Separate selected and unselected items
+		var selectedItems []filteredListItem
+		var unselectedItems []filteredListItem
+
 		for i, user := range m.availableUsers {
 			// Build display name
 			displayName := user.Name
@@ -48,14 +53,41 @@ func (m *model) buildFilteredList() []filteredListItem {
 				text += fmt.Sprintf(" (%s)", user.Login)
 			}
 
-			items = append(items, filteredListItem{
+			item := filteredListItem{
 				originalIndex: i,
 				displayText:   text,
 				isSelected:    isSelected,
-			})
-			m.filteredIndices = append(m.filteredIndices, i)
+			}
+
+			if isSelected {
+				selectedItems = append(selectedItems, item)
+			} else {
+				unselectedItems = append(unselectedItems, item)
+			}
+		}
+
+		// Sort selected items alphabetically
+		sort.Slice(selectedItems, func(i, j int) bool {
+			return selectedItems[i].displayText < selectedItems[j].displayText
+		})
+
+		// Sort unselected items alphabetically
+		sort.Slice(unselectedItems, func(i, j int) bool {
+			return unselectedItems[i].displayText < unselectedItems[j].displayText
+		})
+
+		// Combine: selected on top, then unselected
+		items = append(selectedItems, unselectedItems...)
+
+		// Build filtered indices
+		for _, item := range items {
+			m.filteredIndices = append(m.filteredIndices, item.originalIndex)
 		}
 	} else if m.userInputMode == "project" {
+		// Separate selected and unselected items
+		var selectedItems []filteredListItem
+		var unselectedItems []filteredListItem
+
 		for i, project := range m.availableProjects {
 			// Apply filter - but always show selected items
 			isSelected := m.selectedProjects[project.ID]
@@ -67,12 +99,35 @@ func (m *model) buildFilteredList() []filteredListItem {
 				}
 			}
 
-			items = append(items, filteredListItem{
+			item := filteredListItem{
 				originalIndex: i,
 				displayText:   project.Name,
 				isSelected:    isSelected,
-			})
-			m.filteredIndices = append(m.filteredIndices, i)
+			}
+
+			if isSelected {
+				selectedItems = append(selectedItems, item)
+			} else {
+				unselectedItems = append(unselectedItems, item)
+			}
+		}
+
+		// Sort selected items alphabetically
+		sort.Slice(selectedItems, func(i, j int) bool {
+			return selectedItems[i].displayText < selectedItems[j].displayText
+		})
+
+		// Sort unselected items alphabetically
+		sort.Slice(unselectedItems, func(i, j int) bool {
+			return unselectedItems[i].displayText < unselectedItems[j].displayText
+		})
+
+		// Combine: selected on top, then unselected
+		items = append(selectedItems, unselectedItems...)
+
+		// Build filtered indices
+		for _, item := range items {
+			m.filteredIndices = append(m.filteredIndices, item.originalIndex)
 		}
 	}
 
