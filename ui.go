@@ -28,9 +28,9 @@ func (m model) View() string {
 	}
 
 	// Left pane with title embedded in border
-	leftBorderColor := lipgloss.Color("#874BFD")
+	leftBorderColor := lipgloss.Color(settings.Colors.InactivePaneBorder)
 	if m.activePane == 0 {
-		leftBorderColor = lipgloss.Color("#FF00FF")
+		leftBorderColor = lipgloss.Color(settings.Colors.ActivePaneBorder)
 	}
 
 	// Render pane with border
@@ -71,9 +71,9 @@ func (m model) View() string {
 	}
 
 	// Right pane with title embedded in border
-	rightBorderColor := lipgloss.Color("#874BFD")
+	rightBorderColor := lipgloss.Color(settings.Colors.InactivePaneBorder)
 	if m.activePane == 1 {
-		rightBorderColor = lipgloss.Color("#FF00FF")
+		rightBorderColor = lipgloss.Color(settings.Colors.ActivePaneBorder)
 	}
 
 	// Render pane with border
