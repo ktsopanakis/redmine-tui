@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -16,28 +17,65 @@ const (
 	footerHeight = 1
 )
 
-var (
-	// Styles
+type Settings struct {
+	Colors struct {
+		ActivePaneBorder   string `yaml:"active_pane_border"`
+		InactivePaneBorder string `yaml:"inactive_pane_border"`
+		HeaderBackground   string `yaml:"header_background"`
+		HeaderText         string `yaml:"header_text"`
+		FooterBackground   string `yaml:"footer_background"`
+		FooterText         string `yaml:"footer_text"`
+	} `yaml:"colors"`
+}
+
+var settings Settings
+
+func loadSettings() {
+	data, err := os.ReadFile("config.yaml")
+	if err != nil {
+		fmt.Printf("Warning: Could not load config.yaml, using defaults: %v\n", err)
+		settings.Colors.ActivePaneBorder = "#FF00FF"
+		settings.Colors.InactivePaneBorder = "#874BFD"
+		settings.Colors.HeaderBackground = "#7D56F4"
+		settings.Colors.HeaderText = "#FAFAFA"
+		settings.Colors.FooterBackground = "#3C3C3C"
+		settings.Colors.FooterText = "#FAFAFA"
+		return
+	}
+
+	if err := yaml.Unmarshal(data, &settings); err != nil {
+		fmt.Printf("Warning: Could not parse config.yaml: %v\n", err)
+	}
+}
+
+func initStyles() {
 	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#7D56F4")).
-			PaddingLeft(1)
+		Bold(true).
+		Foreground(lipgloss.Color(settings.Colors.HeaderText)).
+		Background(lipgloss.Color(settings.Colors.HeaderBackground)).
+		PaddingLeft(1)
 
 	footerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#3C3C3C")).
-			PaddingLeft(1)
+		Foreground(lipgloss.Color(settings.Colors.FooterText)).
+		Background(lipgloss.Color(settings.Colors.FooterBackground)).
+		PaddingLeft(1)
 
 	paneStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(settings.Colors.InactivePaneBorder)).
+		Padding(0, 1)
 
 	activePaneStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FF00FF")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
+		Padding(0, 1)
+}
+
+var (
+	headerStyle     lipgloss.Style
+	footerStyle     lipgloss.Style
+	paneStyle       lipgloss.Style
+	activePaneStyle lipgloss.Style
 )
 
 // Lorem ipsum content for testing scrolling
@@ -71,9 +109,10 @@ type model struct {
 	height     int
 	leftPane   viewport.Model
 	rightPane  viewport.Model
-	activePane int // 0 for left, 1 for right
+	activePane int
 	leftTitle  string
 	rightTitle string
+	showHelp   bool
 }
 
 func initialModel() model {
@@ -98,15 +137,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 		if !m.ready {
-			// Calculate pane dimensions
-			// Left pane: 1/3 of width
-			// Content width = total - border(2) - padding(2) = total - 4
 			paneWidth := (msg.Width / 3) - 4
-			// Right pane: calculate as remainder to avoid rounding issues
-			// Total left pane rendered width = paneWidth + 4 (borders + padding)
 			leftPaneTotal := paneWidth + 4
 			rightPaneWidth := msg.Width - leftPaneTotal - 4
-			// Height: total - header(1) - footer(1) - pane borders(2) = total - 4
 			paneHeight := msg.Height - headerHeight - footerHeight - 2
 
 			// Initialize left pane
@@ -119,7 +152,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.ready = true
 		} else {
-			// Update pane dimensions on resize
 			paneWidth := (msg.Width / 3) - 4
 			leftPaneTotal := paneWidth + 4
 			rightPaneWidth := msg.Width - leftPaneTotal - 4
@@ -137,6 +169,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+
+		case "?":
+			m.showHelp = !m.showHelp
+			return m, nil
 
 		case "tab":
 			// Switch between panes
@@ -299,9 +335,8 @@ func (m model) View() string {
 	// Combine panes side by side
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 
-	// Footer with options
-	footerText := "Tab: Switch Panes | ↑↓/jk: Scroll | PgUp/PgDn: Page | q: Quit"
-	footer := footerStyle.Width(m.width).Render(footerText)
+	// Footer with adaptive options
+	footer := footerStyle.Width(m.width).Render(m.getFooterText())
 
 	// Combine all sections
 	return lipgloss.JoinVertical(
@@ -312,7 +347,51 @@ func (m model) View() string {
 	)
 }
 
+func (m model) getFooterText() string {
+	items := []string{
+		"Tab: Switch",
+		"↑↓/jk: Scroll",
+		"PgUp/PgDn: Page",
+		"?: Help",
+		"q: Quit",
+	}
+
+	required := []string{"Tab: Switch", "q: Quit"}
+
+	text := ""
+	for _, item := range items {
+		testText := text
+		if testText != "" {
+			testText += " | "
+		}
+		testText += item
+
+		if lipgloss.Width(testText) > m.width-2 {
+			isRequired := false
+			for _, req := range required {
+				if item == req {
+					isRequired = true
+					break
+				}
+			}
+			if !isRequired {
+				continue
+			}
+		}
+
+		if text != "" {
+			text += " | "
+		}
+		text += item
+	}
+
+	return text
+}
+
 func main() {
+	loadSettings()
+	initStyles()
+
 	// Parse command-line flags
 	altScreen := flag.Bool("alt-screen", false, "Use alternate screen buffer (clears on exit)")
 	flag.Parse()

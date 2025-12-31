@@ -1,0 +1,7 @@
+colors:
+  active_pane_border: "#FF00FF"
+  inactive_pane_border: "#874BFD"
+  header_background: "#7D56F4"
+  header_text: "#FAFAFA"
+  footer_background: "#3C3C3C"
+  footer_text: "#FAFAFA"
