@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -27,19 +28,28 @@ func (m model) View() string {
 		Padding(0, 1).
 		Render(m.leftPane.View())
 
-	// Embed title in the top border line
+	// Embed title in the top border line with position indicator
 	leftLines := strings.Split(leftPane, "\n")
 	if len(leftLines) > 0 {
 		// Calculate the actual border width: viewport width + padding (2) + borders (2)
 		borderWidth := m.leftPane.Width + 4
+
+		// Build title with position indicator
+		var titleText string
+		if len(m.issues) > 0 {
+			titleText = fmt.Sprintf("%s (%d/%d)", m.leftTitle, m.selectedIndex+1, len(m.issues))
+		} else {
+			titleText = m.leftTitle
+		}
+
 		// Add dot indicator if active, use border lines before title
 		var titlePart string
 		if m.activePane == 0 {
 			// Active: border lines + dot + title
-			titlePart = "─ ● " + m.leftTitle + " "
+			titlePart = "─ ● " + titleText + " "
 		} else {
 			// Inactive: border lines + title
-			titlePart = "─── " + m.leftTitle + " "
+			titlePart = "─── " + titleText + " "
 		}
 		if borderWidth > len(titlePart)+2 {
 			// Build new border line: corner + title + remaining border + corner
@@ -53,8 +63,29 @@ func (m model) View() string {
 			// Apply the border color
 			styledTopLine := lipgloss.NewStyle().Foreground(leftBorderColor).Render(newPlainLine)
 			leftLines[0] = styledTopLine
-			leftPane = strings.Join(leftLines, "\n")
 		}
+
+		// Add arrow indicator on the left border for selected issue
+		if len(m.issues) > 0 && m.activePane == 0 {
+			// Calculate which border line corresponds to the selected issue
+			// +1 for top border
+			arrowLine := m.selectedDisplayLine + 1
+			if arrowLine > 0 && arrowLine < len(leftLines)-1 {
+				// Replace the │ character with →
+				line := leftLines[arrowLine]
+				if len(line) > 0 {
+					// The border character is at the start
+					runes := []rune(line)
+					if len(runes) > 0 && runes[0] == '│' {
+						leftLines[arrowLine] = lipgloss.NewStyle().
+							Foreground(leftBorderColor).
+							Render("→") + string(runes[1:])
+					}
+				}
+			}
+		}
+
+		leftPane = strings.Join(leftLines, "\n")
 	}
 
 	// Right pane with title embedded in border

@@ -39,20 +39,21 @@ Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saep
 Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.`
 
 type model struct {
-	ready         bool
-	width         int
-	height        int
-	leftPane      viewport.Model
-	rightPane     viewport.Model
-	activePane    int
-	leftTitle     string
-	rightTitle    string
-	showHelp      bool
-	client        *Client
-	issues        []Issue
-	selectedIndex int
-	loading       bool
-	err           error
+	ready               bool
+	width               int
+	height              int
+	leftPane            viewport.Model
+	rightPane           viewport.Model
+	activePane          int
+	leftTitle           string
+	rightTitle          string
+	showHelp            bool
+	client              *Client
+	issues              []Issue
+	selectedIndex       int
+	selectedDisplayLine int // Line number where selected issue is displayed
+	loading             bool
+	err                 error
 }
 
 func initialModel() model {
@@ -233,7 +234,7 @@ func (m *model) updatePaneContent() {
 		return
 	}
 
-	// Left pane: List of issues
+	// Left pane: List of issues with smart roller-style navigation
 	var leftContent string
 	if m.loading {
 		leftContent = "Loading issues..."
@@ -242,15 +243,104 @@ func (m *model) updatePaneContent() {
 	} else if len(m.issues) == 0 {
 		leftContent = "No issues found."
 	} else {
-		for i, issue := range m.issues {
-			prefix := "  "
-			if i == m.selectedIndex {
-				prefix = "> "
+		// Each issue takes 3 lines (ID+Title, Status+Project, Assignee, then blank line)
+		linesPerIssue := 4
+		visibleLines := m.leftPane.Height
+		visibleIssues := visibleLines / linesPerIssue
+
+		// Calculate start index based on position in list
+		var startIdx int
+		if m.selectedIndex < visibleIssues/2 {
+			// Near the start - selection at top
+			startIdx = 0
+		} else if m.selectedIndex >= len(m.issues)-(visibleIssues/2) {
+			// Near the end - selection at bottom
+			startIdx = len(m.issues) - visibleIssues
+			if startIdx < 0 {
+				startIdx = 0
 			}
-			leftContent += fmt.Sprintf("%s#%d %s\n", prefix, issue.ID, issue.Subject)
+		} else {
+			// In the middle - keep selection centered
+			startIdx = m.selectedIndex - (visibleIssues / 2)
+		}
+
+		endIdx := startIdx + visibleIssues
+		if endIdx > len(m.issues) {
+			endIdx = len(m.issues)
+		}
+
+		// Build the content
+		for i := startIdx; i < endIdx; i++ {
+			issue := m.issues[i]
+			isSelected := i == m.selectedIndex
+
+			// Line 1: ID and Subject
+			line1 := fmt.Sprintf("#%-6d %s", issue.ID, issue.Subject)
+			if isSelected {
+				leftContent += lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
+					Render(line1) + "\n"
+			} else {
+				leftContent += line1 + "\n"
+			}
+
+			// Line 2: Status and Project
+			line2 := fmt.Sprintf("       %s • %s", issue.Status.Name, issue.Project.Name)
+			if isSelected {
+				leftContent += lipgloss.NewStyle().
+					Foreground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
+					Render(line2) + "\n"
+			} else {
+				leftContent += lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#888888")).
+					Render(line2) + "\n"
+			}
+
+			// Line 3: Assignee
+			assignee := "Unassigned"
+			if issue.AssignedTo != nil {
+				assignee = issue.AssignedTo.Name
+			}
+			line3 := fmt.Sprintf("       → %s", assignee)
+			if isSelected {
+				leftContent += lipgloss.NewStyle().
+					Foreground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
+					Render(line3) + "\n"
+			} else {
+				leftContent += lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#888888")).
+					Render(line3) + "\n"
+			}
+
+			// Blank line between issues
+			leftContent += "\n"
 		}
 	}
-	m.leftPane.SetContent(lipgloss.NewStyle().Width(m.leftPane.Width).Render(leftContent))
+
+	// Store which issue is at which line for border arrow placement
+	if len(m.issues) > 0 {
+		linesPerIssue := 4
+		visibleLines := m.leftPane.Height
+		visibleIssues := visibleLines / linesPerIssue
+
+		var startIdx int
+		if m.selectedIndex < visibleIssues/2 {
+			startIdx = 0
+		} else if m.selectedIndex >= len(m.issues)-(visibleIssues/2) {
+			startIdx = len(m.issues) - visibleIssues
+			if startIdx < 0 {
+				startIdx = 0
+			}
+		} else {
+			startIdx = m.selectedIndex - (visibleIssues / 2)
+		}
+
+		// Calculate the line number where selected issue appears (0-indexed)
+		m.selectedDisplayLine = (m.selectedIndex - startIdx) * linesPerIssue
+	}
+
+	m.leftPane.SetContent(leftContent)
 
 	// Right pane: Selected issue details
 	var rightContent string
