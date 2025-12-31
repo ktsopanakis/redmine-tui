@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+GH_REPO="https://github.com/ktsopanakis/redmine-tui"
+TOOL_NAME="redmine-tui"
+
+install_version() {
+  local version="$1"
+  local install_path="$2"
+
+  local bin_path="${install_path}/bin"
+  mkdir -p "${bin_path}"
+
+  echo "Installing ${TOOL_NAME} ${version}..."
+
+  # Clone the specific version
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  
+  git clone --depth 1 --branch "v${version}" "${GH_REPO}" "${tmp_dir}" || {
+    echo "Failed to clone ${GH_REPO} at version v${version}"
+    rm -rf "${tmp_dir}"
+    exit 1
+  }
+
+  # Build with Go
+  (
+    cd "${tmp_dir}"
+    go build -o "${bin_path}/${TOOL_NAME}" || {
+      echo "Failed to build ${TOOL_NAME}"
+      exit 1
+    }
+  )
+
+  # Cleanup
+  rm -rf "${tmp_dir}"
+
+  echo "${TOOL_NAME} ${version} installed successfully!"
+}
+
+install_version "$ASDF_INSTALL_VERSION" "$ASDF_INSTALL_PATH"
