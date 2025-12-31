@@ -373,33 +373,96 @@ func (m *model) updatePaneContent() {
 	var rightContent string
 	if m.loading {
 		rightContent = "Loading..."
+		m.rightTitle = "Details"
 	} else if m.err != nil {
 		rightContent = fmt.Sprintf("Error: %v", m.err)
+		m.rightTitle = "Details"
 	} else if len(m.issues) == 0 {
 		rightContent = "No issue selected."
+		m.rightTitle = "Details"
 	} else if m.selectedIndex >= 0 && m.selectedIndex < len(m.issues) {
 		issue := m.issues[m.selectedIndex]
-		rightContent = fmt.Sprintf("Issue #%d\n\n", issue.ID)
-		rightContent += fmt.Sprintf("Subject: %s\n\n", issue.Subject)
-		rightContent += fmt.Sprintf("Status: %s\n", issue.Status.Name)
-		rightContent += fmt.Sprintf("Priority: %s\n", issue.Priority.Name)
-		rightContent += fmt.Sprintf("Tracker: %s\n", issue.Tracker.Name)
-		rightContent += fmt.Sprintf("Project: %s\n", issue.Project.Name)
-		rightContent += fmt.Sprintf("Author: %s\n", issue.Author.Name)
+
+		// Update title to show issue ID
+		m.rightTitle = fmt.Sprintf("#%d", issue.ID)
+
+		// Color styles matching the left pane
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")).Bold(true)   // Gold
+		projectStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379")).Bold(true)  // Green
+		assigneeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C678DD")).Bold(true) // Purple
+		labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))               // Blue
+		titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Bold(true)    // White, bold
+		sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B")).Bold(true)  // Yellow
+
+		// Subject (title)
+		rightContent = titleStyle.Render(issue.Subject) + "\n\n"
+
+		// Static information (color-coded)
+		rightContent += labelStyle.Render("Status: ") + statusStyle.Render(issue.Status.Name) + "  "
+		rightContent += labelStyle.Render("Priority: ") + statusStyle.Render(issue.Priority.Name) + "\n"
+
+		rightContent += labelStyle.Render("Project: ") + projectStyle.Render(issue.Project.Name) + "  "
+		rightContent += labelStyle.Render("Tracker: ") + projectStyle.Render(issue.Tracker.Name) + "\n"
+
+		assignee := "Unassigned"
 		if issue.AssignedTo != nil {
-			rightContent += fmt.Sprintf("Assigned To: %s\n", issue.AssignedTo.Name)
+			assignee = issue.AssignedTo.Name
 		}
-		rightContent += fmt.Sprintf("Done: %d%%\n", issue.DoneRatio)
+		rightContent += labelStyle.Render("Assigned: ") + assigneeStyle.Render(assignee) + "  "
+		rightContent += labelStyle.Render("Author: ") + assigneeStyle.Render(issue.Author.Name) + "\n"
+
+		rightContent += labelStyle.Render("Progress: ") + statusStyle.Render(fmt.Sprintf("%d%%", issue.DoneRatio))
 		if issue.StartDate != "" {
-			rightContent += fmt.Sprintf("Start Date: %s\n", issue.StartDate)
+			rightContent += "  " + labelStyle.Render("Start: ") + issue.StartDate
 		}
 		if issue.DueDate != "" {
-			rightContent += fmt.Sprintf("Due Date: %s\n", issue.DueDate)
+			rightContent += "  " + labelStyle.Render("Due: ") + issue.DueDate
 		}
-		rightContent += fmt.Sprintf("\nCreated: %s\n", issue.CreatedOn.Format("2006-01-02 15:04"))
-		rightContent += fmt.Sprintf("Updated: %s\n\n", issue.UpdatedOn.Format("2006-01-02 15:04"))
-		rightContent += "Description:\n"
-		rightContent += fmt.Sprintf("%s\n", issue.Description)
+		rightContent += "\n"
+
+		rightContent += labelStyle.Render("Created: ") + issue.CreatedOn.Format("2006-01-02 15:04") + "  "
+		rightContent += labelStyle.Render("Updated: ") + issue.UpdatedOn.Format("2006-01-02 15:04") + "\n\n"
+
+		// Description section
+		rightContent += sectionStyle.Render("━━━ DESCRIPTION ") + sectionStyle.Render(strings.Repeat("━", m.rightPane.Width-17)) + "\n\n"
+		if issue.Description != "" {
+			rightContent += issue.Description + "\n"
+		} else {
+			rightContent += lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("No description provided.") + "\n"
+		}
+
+		// History and notes section
+		rightContent += "\n" + sectionStyle.Render("━━━ HISTORY & NOTES ") + sectionStyle.Render(strings.Repeat("━", m.rightPane.Width-21)) + "\n\n"
+
+		if len(issue.Journals) > 0 {
+			for _, journal := range issue.Journals {
+				userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C678DD")).Bold(true)
+				dateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+
+				rightContent += userStyle.Render(journal.User.Name) + " " + dateStyle.Render(journal.CreatedOn.Format("2006-01-02 15:04")) + "\n"
+
+				// Show property changes
+				if len(journal.Details) > 0 {
+					for _, detail := range journal.Details {
+						changeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))
+						if detail.OldValue != "" && detail.NewValue != "" {
+							rightContent += "  " + changeStyle.Render(fmt.Sprintf("%s: %s → %s", detail.Name, detail.OldValue, detail.NewValue)) + "\n"
+						} else if detail.NewValue != "" {
+							rightContent += "  " + changeStyle.Render(fmt.Sprintf("%s: %s", detail.Name, detail.NewValue)) + "\n"
+						}
+					}
+				}
+
+				// Show notes/comments
+				if journal.Notes != "" {
+					rightContent += "  " + journal.Notes + "\n"
+				}
+
+				rightContent += "\n"
+			}
+		} else {
+			rightContent += lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("No history available.") + "\n"
+		}
 	}
 	m.rightPane.SetContent(lipgloss.NewStyle().Width(m.rightPane.Width).Render(rightContent))
 }
