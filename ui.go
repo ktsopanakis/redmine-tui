@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/ktsopanakis/redmine-tui/config"
 )
 
 func (m model) View() string {
@@ -19,7 +21,7 @@ func (m model) View() string {
 	dateTime := now.Format("2006-01-02 15:04:05")
 
 	// Build header with background on each element to preserve colors
-	bg := lipgloss.Color(settings.Colors.HeaderBackground)
+	bg := lipgloss.Color(config.Current.Colors.HeaderBackground)
 
 	icon := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFFFFF")).
@@ -34,7 +36,7 @@ func (m model) View() string {
 		Foreground(lipgloss.Color("#FFD700")).
 		Background(bg).
 		Bold(true).
-		Render(settings.Redmine.URL)
+		Render(config.Current.Redmine.URL)
 
 	// Build right side: username | day date time
 	username := ""
@@ -61,7 +63,7 @@ func (m model) View() string {
 	rightSide := username + day + timeDisplay
 
 	// Calculate spacing
-	leftLen := 1 + 1 + len(settings.Redmine.URL)
+	leftLen := 1 + 1 + len(config.Current.Redmine.URL)
 	rightLen := 0
 	if m.currentUser != nil {
 		rightLen = len(m.currentUser.Name) + 3 // name + " | "
@@ -80,9 +82,9 @@ func (m model) View() string {
 		Render(icon + space + url + spacer + rightSide)
 
 	// Left pane with title embedded in border
-	leftBorderColor := lipgloss.Color(settings.Colors.InactivePaneBorder)
+	leftBorderColor := lipgloss.Color(config.Current.Colors.InactivePaneBorder)
 	if m.activePane == 0 {
-		leftBorderColor = lipgloss.Color(settings.Colors.ActivePaneBorder)
+		leftBorderColor = lipgloss.Color(config.Current.Colors.ActivePaneBorder)
 	}
 
 	// Render pane with border
@@ -153,12 +155,12 @@ func (m model) View() string {
 	}
 
 	// Right pane with title embedded in border
-	rightBorderColor := lipgloss.Color(settings.Colors.InactivePaneBorder)
+	rightBorderColor := lipgloss.Color(config.Current.Colors.InactivePaneBorder)
 	if m.editMode && m.hasUnsavedChanges {
 		// Red border when editing with unsaved changes
 		rightBorderColor = lipgloss.Color("#E06C75") // Red
 	} else if m.activePane == 1 {
-		rightBorderColor = lipgloss.Color(settings.Colors.ActivePaneBorder)
+		rightBorderColor = lipgloss.Color(config.Current.Colors.ActivePaneBorder)
 	}
 
 	// Render pane with border

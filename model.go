@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ktsopanakis/redmine-tui/api"
+	"github.com/ktsopanakis/redmine-tui/config"
 )
 
 const (
@@ -67,7 +68,7 @@ type model struct {
 }
 
 func initialModel() model {
-	client := api.NewClient(settings.Redmine.URL, settings.Redmine.APIKey)
+	client := api.NewClient(config.Current.Redmine.URL, config.Current.Redmine.APIKey)
 	filterInput := textinput.New()
 	filterInput.Placeholder = "Type to filter issues..."
 	filterInput.CharLimit = 100

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/ktsopanakis/redmine-tui/config"
 )
 
 func (m *model) updatePaneContent() {
@@ -154,7 +156,7 @@ func (m *model) updatePaneContent() {
 				assigneeStyle = assigneeStyle.Background(subtleBg).Bold(true)
 				spacerStyle = spacerStyle.Background(subtleBg) // Apply background to spacers too
 				linePrefix = lipgloss.NewStyle().
-					Foreground(lipgloss.Color(settings.Colors.ActivePaneBorder)).
+					Foreground(lipgloss.Color(config.Current.Colors.ActivePaneBorder)).
 					Background(subtleBg).
 					Render("▌")
 			} else {

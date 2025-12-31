@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -23,10 +23,10 @@ type Settings struct {
 	} `yaml:"colors"`
 }
 
-var settings Settings
+var Current Settings
 
-// getConfigPath returns the path to the config file in the user's home directory
-func getConfigPath() (string, error) {
+// GetConfigPath returns the path to the config file in the user's home directory
+func GetConfigPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -36,7 +36,7 @@ func getConfigPath() (string, error) {
 
 // ensureConfigDir creates the config directory if it doesn't exist
 func ensureConfigDir() error {
-	configPath, err := getConfigPath()
+	configPath, err := GetConfigPath()
 	if err != nil {
 		return err
 	}
@@ -44,8 +44,8 @@ func ensureConfigDir() error {
 	return os.MkdirAll(configDir, 0755)
 }
 
-func loadSettings() error {
-	configPath, err := getConfigPath()
+func Load() error {
+	configPath, err := GetConfigPath()
 	if err != nil {
 		return fmt.Errorf("could not determine config path: %w", err)
 	}
@@ -59,7 +59,7 @@ func loadSettings() error {
 		return fmt.Errorf("could not load config: %w", err)
 	}
 
-	if err := yaml.Unmarshal(data, &settings); err != nil {
+	if err := yaml.Unmarshal(data, &Current); err != nil {
 		return fmt.Errorf("could not parse config: %w", err)
 	}
 
@@ -67,12 +67,12 @@ func loadSettings() error {
 }
 
 func saveSettings() error {
-	configPath, err := getConfigPath()
+	configPath, err := GetConfigPath()
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(&settings)
+	data, err := yaml.Marshal(&Current)
 	if err != nil {
 		return err
 	}
@@ -80,26 +80,26 @@ func saveSettings() error {
 	return os.WriteFile(configPath, data, 0600)
 }
 
-// promptForRedmineSetup interactively asks for Redmine URL and API key
-func promptForRedmineSetup() error {
+// PromptForRedmineSetup interactively asks for Redmine URL and API key
+func PromptForRedmineSetup() error {
 	// Set default colors first
-	settings.Colors.ActivePaneBorder = "#FF00FF"
-	settings.Colors.InactivePaneBorder = "#874BFD"
-	settings.Colors.HeaderBackground = "#7D56F4"
-	settings.Colors.HeaderText = "#FAFAFA"
-	settings.Colors.FooterBackground = "#3C3C3C"
-	settings.Colors.FooterText = "#FAFAFA"
+	Current.Colors.ActivePaneBorder = "#FF00FF"
+	Current.Colors.InactivePaneBorder = "#874BFD"
+	Current.Colors.HeaderBackground = "#7D56F4"
+	Current.Colors.HeaderText = "#FAFAFA"
+	Current.Colors.FooterBackground = "#3C3C3C"
+	Current.Colors.FooterText = "#FAFAFA"
 
 	fmt.Println("\n=== Redmine TUI Setup ===")
 	fmt.Println("Please enter your Redmine configuration:")
 
 	fmt.Print("\nRedmine URL (e.g., https://redmine.example.com): ")
-	fmt.Scanln(&settings.Redmine.URL)
+	fmt.Scanln(&Current.Redmine.URL)
 
 	fmt.Print("API Key: ")
-	fmt.Scanln(&settings.Redmine.APIKey)
+	fmt.Scanln(&Current.Redmine.APIKey)
 
-	if settings.Redmine.URL == "" || settings.Redmine.APIKey == "" {
+	if Current.Redmine.URL == "" || Current.Redmine.APIKey == "" {
 		return fmt.Errorf("URL and API Key are required")
 	}
 
@@ -111,7 +111,7 @@ func promptForRedmineSetup() error {
 		return fmt.Errorf("could not save config: %w", err)
 	}
 
-	configPath, _ := getConfigPath()
+	configPath, _ := GetConfigPath()
 	fmt.Printf("\nConfiguration saved to: %s\n", configPath)
 	return nil
 }

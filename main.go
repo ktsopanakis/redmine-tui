@@ -6,6 +6,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/ktsopanakis/redmine-tui/config"
 )
 
 func main() {
@@ -17,7 +19,7 @@ func main() {
 
 	// Handle --show-config flag
 	if *showConfig {
-		configPath, err := getConfigPath()
+		configPath, err := config.GetConfigPath()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -28,7 +30,7 @@ func main() {
 
 	// Handle --setup flag
 	if *setup {
-		if err := promptForRedmineSetup(); err != nil {
+		if err := config.PromptForRedmineSetup(); err != nil {
 			fmt.Fprintf(os.Stderr, "Setup failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -37,26 +39,26 @@ func main() {
 	}
 
 	// Load settings
-	err := loadSettings()
+	err := config.Load()
 	if err != nil && err.Error() == "config file does not exist: first run" {
 		// First run - automatically run setup
 		fmt.Println("Welcome to Redmine TUI!")
 		fmt.Println("No configuration found. Let's set up your Redmine connection.")
-		if err := promptForRedmineSetup(); err != nil {
+		if err := config.PromptForRedmineSetup(); err != nil {
 			fmt.Fprintf(os.Stderr, "Setup failed: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println("\nSetup complete! Starting Redmine TUI...\n")
 	} else if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		configPath, _ := getConfigPath()
+		configPath, _ := config.GetConfigPath()
 		fmt.Fprintf(os.Stderr, "Please check your config file at: %s\n", configPath)
 		os.Exit(1)
 	}
 
 	// Check if Redmine is configured
-	if settings.Redmine.URL == "" || settings.Redmine.APIKey == "" {
-		configPath, _ := getConfigPath()
+	if config.Current.Redmine.URL == "" || config.Current.Redmine.APIKey == "" {
+		configPath, _ := config.GetConfigPath()
 		fmt.Fprintf(os.Stderr, "Redmine URL and API Key are not configured.\n")
 		fmt.Fprintf(os.Stderr, "Run 'redmine-tui --setup' to configure, or edit: %s\n", configPath)
 		os.Exit(1)
