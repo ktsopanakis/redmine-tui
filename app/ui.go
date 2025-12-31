@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -16,71 +15,27 @@ func (m Model) View() string {
 		return "\n  Initializing..."
 	}
 
-	// Header
-	now := time.Now()
-	dayOfWeek := now.Format("Monday")
-	dateTime := now.Format("2006-01-02 15:04:05")
+	// Build header sections
+	leftSections := []appui.HeaderSection{
+		{Text: "◆", Color: "#FFFFFF", Bold: true},
+		{Text: config.Current.Redmine.URL, Color: "#FFD700", Bold: true},
+	}
 
-	// Build header with background on each element to preserve colors
-	bg := lipgloss.Color(config.Current.Colors.HeaderBackground)
+	dayOfWeek, dateTime := appui.FormatDateTime()
+	rightSections := []appui.HeaderSection{}
 
-	icon := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFFFFF")).
-		Background(bg).
-		Bold(true).
-		Render("◆")
-
-	space := lipgloss.NewStyle().Background(bg).Render(" ")
-
-	// More contrasty yellow for URL
-	url := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFD700")).
-		Background(bg).
-		Bold(true).
-		Render(config.Current.Redmine.URL)
-
-	// Build right side: username | day date time
-	username := ""
 	if m.currentUser != nil {
-		username = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#C678DD")).
-			Background(bg).
-			Render(m.currentUser.Name) + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#666666")).
-			Background(bg).
-			Render(" | ")
+		rightSections = append(rightSections,
+			appui.HeaderSection{Text: m.currentUser.Name, Color: "#C678DD", Bold: false},
+			appui.HeaderSection{Text: "|", Color: "#666666", Bold: false},
+		)
 	}
+	rightSections = append(rightSections,
+		appui.HeaderSection{Text: dayOfWeek, Color: "#61AFEF", Bold: false},
+		appui.HeaderSection{Text: dateTime, Color: "#98C379", Bold: false},
+	)
 
-	day := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#61AFEF")).
-		Background(bg).
-		Render(dayOfWeek)
-
-	timeDisplay := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#98C379")).
-		Background(bg).
-		Render(" " + dateTime)
-
-	rightSide := username + day + timeDisplay
-
-	// Calculate spacing
-	leftLen := 1 + 1 + len(config.Current.Redmine.URL)
-	rightLen := 0
-	if m.currentUser != nil {
-		rightLen = len(m.currentUser.Name) + 3 // name + " | "
-	}
-	rightLen += len(dayOfWeek) + 1 + len(dateTime) // day + space + datetime
-
-	spacer := ""
-	if m.width > leftLen+rightLen+1 {
-		spacer = lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", m.width-leftLen-rightLen-1))
-	}
-
-	header := lipgloss.NewStyle().
-		Background(bg).
-		PaddingLeft(1).
-		Width(m.width).
-		Render(icon + space + url + spacer + rightSide)
+	header := appui.RenderHeader(leftSections, rightSections, m.width)
 
 	// Left pane with title embedded in border
 	leftBorderColor := lipgloss.Color(config.Current.Colors.InactivePaneBorder)
