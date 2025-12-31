@@ -2,14 +2,23 @@
 
 set -euo pipefail
 
-GH_REPO="https://github.com/ktsopanakis/redmine-tui"
+GH_REPO="ktsopanakis/redmine-tui"
 
 list_all_versions() {
-  git ls-remote --tags --refs "$GH_REPO" |
-    grep -o 'refs/tags/.*' |
-    cut -d/ -f3- |
-    sed 's/^v//' |
-    sort -V
+  # Try GitHub API first (faster and more reliable)
+  if command -v curl >/dev/null 2>&1; then
+    curl -s "https://api.github.com/repos/${GH_REPO}/tags" | 
+      grep '"name":' | 
+      sed -E 's/.*"name": "v?([^"]+)".*/\1/' |
+      sort -V
+  else
+    # Fallback to git ls-remote
+    git ls-remote --tags --refs "https://github.com/${GH_REPO}" |
+      grep -o 'refs/tags/.*' |
+      cut -d/ -f3- |
+      sed 's/^v//' |
+      sort -V
+  fi
 }
 
 list_all_versions
