@@ -66,8 +66,9 @@ type Model struct {
 	originalValues      map[string]string // fieldName -> original value for comparison
 
 	// Modal state
-	showModal bool   // whether a modal is currently displayed
-	modalType string // type of modal: "help", etc.
+	showModal   bool   // whether a modal is currently displayed
+	modalType   string // type of modal: "help", etc.
+	modalScroll int    // scroll position in modal content
 }
 
 func InitialModel() Model {
@@ -250,9 +251,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "esc":
 			if m.showModal {
-				// Close modal
+				// Close modal and reset scroll
 				m.showModal = false
 				m.modalType = ""
+				m.modalScroll = 0
 				return m, nil
 			} else if m.editMode {
 				// Exit edit mode without saving - clear all pending edits
@@ -464,7 +466,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "up", "k":
-			if m.editMode && m.editFieldIndex < len(editableFields) {
+			if m.showModal {
+				// Scroll up in modal
+				if m.modalScroll > 0 {
+					m.modalScroll--
+				}
+				return m, nil
+			} else if m.editMode && m.editFieldIndex < len(editableFields) {
 				field := editableFields[m.editFieldIndex]
 				if field.Type == "select" {
 					// Cycle through select options backwards
@@ -522,7 +530,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			if m.editMode && m.editFieldIndex < len(editableFields) {
+			if m.showModal {
+				// Scroll down in modal
+				m.modalScroll++
+				return m, nil
+			} else if m.editMode && m.editFieldIndex < len(editableFields) {
 				field := editableFields[m.editFieldIndex]
 				if field.Type == "select" {
 					// Cycle through select options forwards
@@ -762,6 +774,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.showModal = !m.showModal
 					if m.showModal {
 						m.modalType = "help"
+						m.modalScroll = 0 // Reset scroll when opening
 					}
 					return m, nil
 				case "tab":

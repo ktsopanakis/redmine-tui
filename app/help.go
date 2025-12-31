@@ -46,12 +46,13 @@ func (m Model) getHelpContent() []string {
 // renderHelpModal renders the help modal
 func (m Model) renderHelpModal() string {
 	cfg := appui.ModalConfig{
-		Title:       "Redmine TUI - Help",
-		Content:     m.getHelpContent(),
-		Width:       m.width,
-		Height:      m.height,
-		BorderColor: "#61AFEF",
-		TitleColor:  "#FFFFFF",
+		Title:        "Redmine TUI - Help",
+		Content:      m.getHelpContent(),
+		Width:        m.width,
+		Height:       m.height,
+		BorderColor:  "#61AFEF",
+		TitleColor:   "#FFFFFF",
+		ScrollOffset: m.modalScroll,
 	}
 	return appui.RenderModal(cfg)
 }
