@@ -12,4 +12,4 @@ list_all_versions() {
     sort -V
 }
 
-list_all_versions | cat
+list_all_versions
