@@ -191,27 +191,33 @@ func OverlayInCorner(base, overlay string, width int, corner string) string {
 	switch corner {
 	case "top-right":
 		startRow = 1 // Leave 1 line for header
-		startCol = width - overlayWidth - 3
+		startCol = width - overlayWidth - 1
+		if startCol < 0 {
+			startCol = 0
+		}
 	case "top-left":
 		startRow = 1
 		startCol = 2
 	case "bottom-right":
 		startRow = len(baseLines) - overlayHeight - 2
-		startCol = width - overlayWidth - 3
+		startCol = width - overlayWidth - 1
+		if startCol < 0 {
+			startCol = 0
+		}
 	case "bottom-left":
 		startRow = len(baseLines) - overlayHeight - 2
 		startCol = 2
 	default:
 		// Default to top-right
 		startRow = 1
-		startCol = width - overlayWidth - 3
+		startCol = width - overlayWidth - 1
+		if startCol < 0 {
+			startCol = 0
+		}
 	}
 
 	if startRow < 0 {
 		startRow = 0
-	}
-	if startCol < 0 {
-		startCol = 0
 	}
 
 	// Overlay the content line by line
@@ -226,21 +232,24 @@ func OverlayInCorner(base, overlay string, width int, corner string) string {
 
 		baseLine := result[row]
 		baseWidth := lipgloss.Width(baseLine)
-		overlayLineWidth := lipgloss.Width(overlayLine)
 
-		// Build the new line by padding and placing overlay
+		// Build the new line by padding and placing overlay at the right position
 		var newLine string
-		
-		if startCol > baseWidth {
-			// Need to pad the base line
-			newLine = baseLine + strings.Repeat(" ", startCol-baseWidth) + overlayLine
-		} else if startCol + overlayLineWidth <= baseWidth {
-			// Overlay fits within existing line - we need to truncate base and add overlay
-			// This is complex with ANSI codes, so we'll just append
-			newLine = lipgloss.NewStyle().Width(startCol).Render(baseLine) + overlayLine
+
+		if startCol >= baseWidth {
+			// Need to pad the base line to reach startCol
+			padding := startCol - baseWidth
+			newLine = baseLine + strings.Repeat(" ", padding) + overlayLine
 		} else {
-			// Overlay extends beyond base line
-			newLine = lipgloss.NewStyle().Width(startCol).Render(baseLine) + overlayLine
+			// Truncate base line at startCol and add overlay
+			truncated := lipgloss.NewStyle().MaxWidth(startCol).Render(baseLine)
+			actualWidth := lipgloss.Width(truncated)
+			if actualWidth < startCol {
+				// Add padding if truncation resulted in shorter width
+				newLine = truncated + strings.Repeat(" ", startCol-actualWidth) + overlayLine
+			} else {
+				newLine = truncated + overlayLine
+			}
 		}
 
 		result[row] = newLine

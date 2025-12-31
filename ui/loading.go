@@ -111,7 +111,7 @@ func (m LoadingModel) View() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("63")).
 		Padding(0, 1).
-		MaxWidth(65).
+		Width(58). // Fixed width for consistent positioning
 		Background(lipgloss.Color("235"))
 
 	// Count in-progress messages
@@ -125,7 +125,8 @@ func (m LoadingModel) View() string {
 	if inProgress > 0 {
 		b.WriteString(fmt.Sprintf("%s Loading API calls...\n", m.spinner.View()))
 	} else {
-		b.WriteString("✓ All operations complete\n")
+		greenCheck := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("✓")
+		b.WriteString(fmt.Sprintf("%s All operations complete\n", greenCheck))
 	}
 
 	// Show only the last maxLines messages
@@ -139,25 +140,20 @@ func (m LoadingModel) View() string {
 		timestamp := msg.timestamp.Format("15:04:05")
 		text := msg.text
 
-		// Truncate long messages
-		if len(text) > 40 {
-			text = text[:37] + "..."
+		// Truncate long messages to fit width
+		maxTextLen := 36
+		if len(text) > maxTextLen {
+			text = text[:maxTextLen-3] + "..."
 		}
 
 		if msg.completed {
 			// Green checkmark for completed
-			completedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-			b.WriteString(fmt.Sprintf("%s [%s] %s\n",
-				completedStyle.Render("✓"),
-				timestamp,
-				text))
+			checkmark := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("✓")
+			b.WriteString(fmt.Sprintf("%s [%s] %s\n", checkmark, timestamp, text))
 		} else {
 			// Yellow dot for in-progress
-			inProgressStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-			b.WriteString(fmt.Sprintf("%s [%s] %s\n",
-				inProgressStyle.Render("●"),
-				timestamp,
-				text))
+			dot := lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render("●")
+			b.WriteString(fmt.Sprintf("%s [%s] %s\n", dot, timestamp, text))
 		}
 	}
 
