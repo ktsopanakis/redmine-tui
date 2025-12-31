@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -37,27 +39,51 @@ Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saep
 Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.`
 
 type model struct {
-	ready      bool
-	width      int
-	height     int
-	leftPane   viewport.Model
-	rightPane  viewport.Model
-	activePane int
-	leftTitle  string
-	rightTitle string
-	showHelp   bool
+	ready         bool
+	width         int
+	height        int
+	leftPane      viewport.Model
+	rightPane     viewport.Model
+	activePane    int
+	leftTitle     string
+	rightTitle    string
+	showHelp      bool
+	client        *Client
+	issues        []Issue
+	selectedIndex int
+	loading       bool
+	err           error
 }
 
 func initialModel() model {
+	client := NewClient(settings.Redmine.URL, settings.Redmine.APIKey)
 	return model{
-		leftTitle:  "Le",
-		rightTitle: "Right Pane long",
-		activePane: 0,
+		leftTitle:     "Issues",
+		rightTitle:    "Details",
+		activePane:    0,
+		client:        client,
+		selectedIndex: 0,
+		loading:       true,
+	}
+}
+
+type issuesLoadedMsg struct {
+	issues []Issue
+	err    error
+}
+
+func fetchIssues(client *Client) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := client.GetIssues(0, true, true, 100, 0)
+		if err != nil {
+			return issuesLoadedMsg{err: err}
+		}
+		return issuesLoadedMsg{issues: resp.Issues}
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return fetchIssues(m.client)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -65,6 +91,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case issuesLoadedMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.issues = msg.issues
+		if len(m.issues) > 0 {
+			m.selectedIndex = 0
+		}
+		// Update panes with content if ready
+		if m.ready {
+			m.updatePaneContent()
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -77,13 +119,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Initialize left pane
 			m.leftPane = viewport.New(paneWidth, paneHeight)
-			m.leftPane.SetContent(lipgloss.NewStyle().Width(paneWidth).Render(loremIpsum))
 
 			// Initialize right pane
 			m.rightPane = viewport.New(rightPaneWidth, paneHeight)
-			m.rightPane.SetContent(lipgloss.NewStyle().Width(rightPaneWidth).Render(loremIpsum))
 
 			m.ready = true
+			m.updatePaneContent()
 		} else {
 			paneWidth := (msg.Width / 3) - 4
 			leftPaneTotal := paneWidth + 4
@@ -92,10 +133,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.leftPane.Width = paneWidth
 			m.leftPane.Height = paneHeight
-			m.leftPane.SetContent(lipgloss.NewStyle().Width(paneWidth).Render(loremIpsum))
 			m.rightPane.Width = rightPaneWidth
 			m.rightPane.Height = paneHeight
-			m.rightPane.SetContent(lipgloss.NewStyle().Width(rightPaneWidth).Render(loremIpsum))
+			m.updatePaneContent()
 		}
 
 	case tea.KeyMsg:
@@ -116,20 +156,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "up", "k":
-			if m.activePane == 0 {
-				m.leftPane, cmd = m.leftPane.Update(msg)
+			if m.activePane == 0 && len(m.issues) > 0 {
+				// Navigate issues list
+				if m.selectedIndex > 0 {
+					m.selectedIndex--
+					m.updatePaneContent()
+				}
 			} else {
-				m.rightPane, cmd = m.rightPane.Update(msg)
+				if m.activePane == 0 {
+					m.leftPane, cmd = m.leftPane.Update(msg)
+				} else {
+					m.rightPane, cmd = m.rightPane.Update(msg)
+				}
+				cmds = append(cmds, cmd)
 			}
-			cmds = append(cmds, cmd)
 
 		case "down", "j":
-			if m.activePane == 0 {
-				m.leftPane, cmd = m.leftPane.Update(msg)
+			if m.activePane == 0 && len(m.issues) > 0 {
+				// Navigate issues list
+				if m.selectedIndex < len(m.issues)-1 {
+					m.selectedIndex++
+					m.updatePaneContent()
+				}
 			} else {
-				m.rightPane, cmd = m.rightPane.Update(msg)
+				if m.activePane == 0 {
+					m.leftPane, cmd = m.leftPane.Update(msg)
+				} else {
+					m.rightPane, cmd = m.rightPane.Update(msg)
+				}
+				cmds = append(cmds, cmd)
 			}
-			cmds = append(cmds, cmd)
 
 		case "pgup", "b":
 			if m.activePane == 0 {
@@ -169,4 +225,64 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// updatePaneContent updates the viewport content based on current state
+func (m *model) updatePaneContent() {
+	if !m.ready {
+		return
+	}
+
+	// Left pane: List of issues
+	var leftContent string
+	if m.loading {
+		leftContent = "Loading issues..."
+	} else if m.err != nil {
+		leftContent = fmt.Sprintf("Error: %v", m.err)
+	} else if len(m.issues) == 0 {
+		leftContent = "No issues found."
+	} else {
+		for i, issue := range m.issues {
+			prefix := "  "
+			if i == m.selectedIndex {
+				prefix = "> "
+			}
+			leftContent += fmt.Sprintf("%s#%d %s\n", prefix, issue.ID, issue.Subject)
+		}
+	}
+	m.leftPane.SetContent(lipgloss.NewStyle().Width(m.leftPane.Width).Render(leftContent))
+
+	// Right pane: Selected issue details
+	var rightContent string
+	if m.loading {
+		rightContent = "Loading..."
+	} else if m.err != nil {
+		rightContent = fmt.Sprintf("Error: %v", m.err)
+	} else if len(m.issues) == 0 {
+		rightContent = "No issue selected."
+	} else if m.selectedIndex >= 0 && m.selectedIndex < len(m.issues) {
+		issue := m.issues[m.selectedIndex]
+		rightContent = fmt.Sprintf("Issue #%d\n\n", issue.ID)
+		rightContent += fmt.Sprintf("Subject: %s\n\n", issue.Subject)
+		rightContent += fmt.Sprintf("Status: %s\n", issue.Status.Name)
+		rightContent += fmt.Sprintf("Priority: %s\n", issue.Priority.Name)
+		rightContent += fmt.Sprintf("Tracker: %s\n", issue.Tracker.Name)
+		rightContent += fmt.Sprintf("Project: %s\n", issue.Project.Name)
+		rightContent += fmt.Sprintf("Author: %s\n", issue.Author.Name)
+		if issue.AssignedTo != nil {
+			rightContent += fmt.Sprintf("Assigned To: %s\n", issue.AssignedTo.Name)
+		}
+		rightContent += fmt.Sprintf("Done: %d%%\n", issue.DoneRatio)
+		if issue.StartDate != "" {
+			rightContent += fmt.Sprintf("Start Date: %s\n", issue.StartDate)
+		}
+		if issue.DueDate != "" {
+			rightContent += fmt.Sprintf("Due Date: %s\n", issue.DueDate)
+		}
+		rightContent += fmt.Sprintf("\nCreated: %s\n", issue.CreatedOn.Format("2006-01-02 15:04"))
+		rightContent += fmt.Sprintf("Updated: %s\n\n", issue.UpdatedOn.Format("2006-01-02 15:04"))
+		rightContent += "Description:\n"
+		rightContent += fmt.Sprintf("%s\n", issue.Description)
+	}
+	m.rightPane.SetContent(lipgloss.NewStyle().Width(m.rightPane.Width).Render(rightContent))
 }
