@@ -129,9 +129,10 @@ func (m Model) renderListOverlay() string {
 func (m *Model) buildFilteredList() {
 	var items []appui.ListItem
 
-	if m.userInputMode == "user" {
+	switch m.userInputMode {
+	case "user":
 		items = m.buildUserListItems()
-	} else if m.userInputMode == "project" {
+	case "project":
 		items = m.buildProjectListItems()
 	}
 
