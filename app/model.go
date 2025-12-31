@@ -113,6 +113,8 @@ func (m Model) Init() tea.Cmd {
 		fetchIssues(m.client, m.viewMode, m.assigneeFilter, m.projectFilter, m.issues),
 		ui.SendLoadingMsg("Fetching current user..."),
 		fetchCurrentUser(m.client),
+		ui.SendLoadingMsg("Fetching users..."),
+		fetchUsers(m.client),
 		tickCmd(),
 	)
 }

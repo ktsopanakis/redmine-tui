@@ -2,12 +2,44 @@ package app
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ktsopanakis/redmine-tui/config"
 )
+
+// getUserNameByID returns the user name for a given user ID
+func (m *Model) getUserNameByID(userID string) string {
+	if userID == "" {
+		return ""
+	}
+
+	id, err := strconv.Atoi(userID)
+	if err != nil {
+		return userID // Return the ID string if conversion fails
+	}
+
+	for _, user := range m.availableUsers {
+		if user.ID == id {
+			// Build name from firstname + lastname if Name is empty
+			if user.Name != "" {
+				return user.Name
+			}
+			name := strings.TrimSpace(user.Firstname + " " + user.Lastname)
+			if name != "" {
+				return name
+			}
+			if user.Login != "" {
+				return user.Login
+			}
+		}
+	}
+
+	// If user not found, try to return a more friendly display
+	return "User #" + userID
+}
 
 func (m *Model) updatePaneContent() {
 	if !m.ready {
@@ -426,14 +458,38 @@ func (m *Model) updatePaneContent() {
 						newValueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379"))         // Green for new value
 						arrowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))            // Gray arrow
 
+						// Get display values (convert user IDs to names for assigned_to)
+						oldValue := detail.OldValue
+						newValue := detail.NewValue
+						fieldName := detail.Name
+
+						if detail.Name == "assigned_to_id" || detail.Name == "assigned_to" {
+							fieldName = "Assigned to"
+							if oldValue != "" {
+								oldValue = m.getUserNameByID(oldValue)
+							} else {
+								oldValue = "(unassigned)"
+							}
+							if newValue != "" {
+								newValue = m.getUserNameByID(newValue)
+							} else {
+								newValue = "(unassigned)"
+							}
+						}
+
 						if detail.OldValue != "" && detail.NewValue != "" {
-							rightContent += "  " + fieldStyle.Render(detail.Name+":") + " " +
-								oldValueStyle.Render(detail.OldValue) + " " +
+							rightContent += "  " + fieldStyle.Render(fieldName+":") + " " +
+								oldValueStyle.Render(oldValue) + " " +
 								arrowStyle.Render("→") + " " +
-								newValueStyle.Render(detail.NewValue) + "\n"
+								newValueStyle.Render(newValue) + "\n"
 						} else if detail.NewValue != "" {
-							rightContent += "  " + fieldStyle.Render(detail.Name+":") + " " +
-								newValueStyle.Render(detail.NewValue) + "\n"
+							rightContent += "  " + fieldStyle.Render(fieldName+":") + " " +
+								newValueStyle.Render(newValue) + "\n"
+						} else if detail.OldValue != "" {
+							rightContent += "  " + fieldStyle.Render(fieldName+":") + " " +
+								oldValueStyle.Render(oldValue) + " " +
+								arrowStyle.Render("→") + " " +
+								newValueStyle.Render("(removed)") + "\n"
 						}
 					}
 				}
