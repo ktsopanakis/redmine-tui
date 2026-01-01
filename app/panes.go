@@ -41,6 +41,47 @@ func (m *Model) getUserNameByID(userID string) string {
 	return "User #" + userID
 }
 
+// getStatusNameByID returns the status name for a given status ID
+func (m *Model) getStatusNameByID(statusID string) string {
+	if statusID == "" {
+		return ""
+	}
+
+	id, err := strconv.Atoi(statusID)
+	if err != nil {
+		return statusID
+	}
+
+	for _, status := range m.availableStatuses {
+		if status.ID == id {
+			return status.Name
+		}
+	}
+
+	return "Status #" + statusID
+}
+
+// getTrackerNameByID returns the tracker name for a given tracker ID by searching through issues
+func (m *Model) getTrackerNameByID(trackerID string) string {
+	if trackerID == "" {
+		return ""
+	}
+
+	id, err := strconv.Atoi(trackerID)
+	if err != nil {
+		return trackerID
+	}
+
+	// Search through all issues to find a matching tracker
+	for _, issue := range m.issues {
+		if issue.Tracker.ID == id {
+			return issue.Tracker.Name
+		}
+	}
+
+	return "Tracker #" + trackerID
+}
+
 func (m *Model) updatePaneContent() {
 	if !m.ready {
 		return
@@ -458,7 +499,7 @@ func (m *Model) updatePaneContent() {
 						newValueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379"))         // Green for new value
 						arrowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))            // Gray arrow
 
-						// Get display values (convert user IDs to names for assigned_to)
+						// Get display values (convert IDs to names)
 						oldValue := detail.OldValue
 						newValue := detail.NewValue
 						fieldName := detail.Name
@@ -474,6 +515,22 @@ func (m *Model) updatePaneContent() {
 								newValue = m.getUserNameByID(newValue)
 							} else {
 								newValue = "(unassigned)"
+							}
+						} else if detail.Name == "status_id" || detail.Name == "status" {
+							fieldName = "Status"
+							if oldValue != "" {
+								oldValue = m.getStatusNameByID(oldValue)
+							}
+							if newValue != "" {
+								newValue = m.getStatusNameByID(newValue)
+							}
+						} else if detail.Name == "tracker_id" || detail.Name == "tracker" {
+							fieldName = "Tracker"
+							if oldValue != "" {
+								oldValue = m.getTrackerNameByID(oldValue)
+							}
+							if newValue != "" {
+								newValue = m.getTrackerNameByID(newValue)
 							}
 						}
 

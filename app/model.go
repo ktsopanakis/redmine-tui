@@ -115,6 +115,8 @@ func (m Model) Init() tea.Cmd {
 		fetchCurrentUser(m.client),
 		ui.SendLoadingMsg("Fetching users..."),
 		fetchUsers(m.client),
+		ui.SendLoadingMsg("Fetching statuses..."),
+		fetchStatuses(m.client),
 		tickCmd(),
 	)
 }
