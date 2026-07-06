@@ -131,6 +131,15 @@ func fetchPriorities(client *api.Client) tea.Cmd {
 	}
 }
 
+// addNote posts a note/comment to an issue. Redmine records this as a new
+// journal entry via the standard issue update endpoint.
+func addNote(client *api.Client, issueID int, note string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.UpdateIssue(issueID, map[string]interface{}{"notes": note})
+		return issueUpdatedMsg{issueID: issueID, err: err}
+	}
+}
+
 // updateIssueMultiple sends all pending edits to the API in one request
 func updateIssueMultiple(client *api.Client, issueID int, pendingEdits map[string]string, m Model) tea.Cmd {
 	return func() tea.Msg {

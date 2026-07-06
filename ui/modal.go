@@ -122,6 +122,56 @@ func RenderModal(cfg ModalConfig) string {
 	return centerModal(box, cfg.Width, cfg.Height)
 }
 
+// InputModalConfig configures a centered modal that hosts an input area
+type InputModalConfig struct {
+	Title       string // Title of the modal
+	Body        string // Pre-rendered body (e.g. a textarea view)
+	Hint        string // Hint line shown under the body
+	Width       int    // Container width for positioning
+	Height      int    // Container height for positioning
+	BorderColor string // Border color for the modal
+	TitleColor  string // Title color
+	BoxWidth    int    // Fixed box width (0 = default 66)
+}
+
+// RenderInputModal renders a centered modal box containing a title, an
+// arbitrary pre-rendered body (such as a textarea), and an optional hint line.
+func RenderInputModal(cfg InputModalConfig) string {
+	borderColor := cfg.BorderColor
+	if borderColor == "" {
+		borderColor = "#61AFEF"
+	}
+	boxWidth := cfg.BoxWidth
+	if boxWidth == 0 {
+		boxWidth = 66
+	}
+
+	var content strings.Builder
+	if cfg.Title != "" {
+		titleStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color(cfg.TitleColor)).
+			Bold(true)
+		content.WriteString(titleStyle.Render(cfg.Title) + "\n")
+		content.WriteString(strings.Repeat("─", boxWidth-6) + "\n\n")
+	}
+
+	content.WriteString(cfg.Body)
+
+	if cfg.Hint != "" {
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+		content.WriteString("\n\n" + hintStyle.Render(cfg.Hint))
+	}
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(borderColor)).
+		Padding(1, 2).
+		Width(boxWidth).
+		Render(content.String())
+
+	return centerModal(box, cfg.Width, cfg.Height)
+}
+
 // centerModal centers a modal box in the container with opaque background
 func centerModal(box string, containerWidth, containerHeight int) string {
 	boxHeight := lipgloss.Height(box)

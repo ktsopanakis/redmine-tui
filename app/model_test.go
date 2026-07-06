@@ -1,7 +1,10 @@
 package app
 
 import (
+	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ktsopanakis/redmine-tui/api"
 )
@@ -71,6 +74,85 @@ func TestSwitchPane(t *testing.T) {
 
 	if model.activePane == initialPane {
 		t.Error("Pane should have switched")
+	}
+}
+
+func TestNoteModeToggle(t *testing.T) {
+	model := InitialModel()
+	model.ready = true
+	model.issues = []api.Issue{{ID: 42, Subject: "Test"}}
+	model.selectedIndex = 0
+
+	// Press 'c' to enter note mode on the selected issue
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m := updated.(Model)
+	if !m.noteMode {
+		t.Fatal("pressing 'c' should enter note mode")
+	}
+	if m.noteIssueID != 42 {
+		t.Errorf("noteIssueID = %d, want 42", m.noteIssueID)
+	}
+
+	// Esc cancels without posting
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.noteMode {
+		t.Error("pressing Esc should exit note mode")
+	}
+
+	// Re-enter, then Ctrl+S with an empty note should just close (no request)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m = updated.(Model)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = updated.(Model)
+	if m.noteMode {
+		t.Error("Ctrl+S should exit note mode")
+	}
+	if cmd != nil {
+		t.Error("Ctrl+S with an empty note should not issue a command")
+	}
+}
+
+// TestEditOnlyCommitsTouchedFields reproduces the ticket-3888 bug: changing one
+// field (priority) must not rewrite fields the user merely navigated past
+// (a long, multi-line description), which the single-line input would otherwise
+// truncate/mangle.
+func TestEditOnlyCommitsTouchedFields(t *testing.T) {
+	longDesc := strings.Repeat("Multi\nline description text ", 60) // >800 chars, has newlines
+
+	model := InitialModel()
+	model.loading = false
+	model.availableStatuses = []api.Status{{ID: 1, Name: "New"}, {ID: 2, Name: "In Progress"}}
+	model.availablePriorities = []api.Priority{{ID: 1, Name: "Low"}, {ID: 2, Name: "Normal"}, {ID: 3, Name: "High"}}
+	model.issues = []api.Issue{{
+		ID:          3888,
+		Subject:     "Test",
+		Description: longDesc,
+		Status:      api.Status{ID: 1, Name: "New"},
+		Priority:    api.Priority{ID: 2, Name: "Normal"},
+	}}
+	model.selectedIndex = 0
+
+	var m tea.Model = model
+	// Size the window so the panes initialise (avoids width-0 render math).
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	send := func(k tea.KeyMsg) { m, _ = m.Update(k) }
+	runes := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+
+	send(runes("e"))                    // enter edit mode (field 0 = subject)
+	send(tea.KeyMsg{Type: tea.KeyTab})  // -> description (field 1)
+	send(tea.KeyMsg{Type: tea.KeyTab})  // leave description untouched -> status (2)
+	send(tea.KeyMsg{Type: tea.KeyTab})  // -> priority (3)
+	send(tea.KeyMsg{Type: tea.KeyDown}) // cycle priority Normal -> High
+	send(tea.KeyMsg{Type: tea.KeyTab})  // commit priority
+
+	mm := m.(Model)
+	if v, ok := mm.pendingEdits["description"]; ok {
+		t.Errorf("description must NOT be edited (only navigated past); got %d chars", len(v))
+	}
+	if mm.pendingEdits["priority_id"] != "High" {
+		t.Errorf("priority_id pending edit = %q, want \"High\"", mm.pendingEdits["priority_id"])
 	}
 }
 

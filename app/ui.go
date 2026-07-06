@@ -84,6 +84,11 @@ func (m Model) View() string {
 		panes = appui.OverlayOnContent(panes, listOverlay)
 	}
 
+	// If note mode is active, overlay the note input on top
+	if m.noteMode {
+		panes = appui.OverlayOnContent(panes, m.renderNoteOverlay())
+	}
+
 	// If modal is active, overlay the modal on top
 	if m.showModal {
 		var modal string
@@ -108,6 +113,8 @@ func (m Model) View() string {
 	var footer string
 	if m.filterMode {
 		footer = appui.RenderPromptFooter("Filter: ", m.filterInput.View(), m.width, "#61AFEF")
+	} else if m.noteMode {
+		footer = appui.RenderFooter("Ctrl+S: Post note  |  Esc: Cancel", m.width)
 	} else if m.editMode {
 		footer = appui.RenderFooter(m.renderEditFooter(), m.width)
 	} else if m.userInputMode == "user" {
@@ -128,6 +135,20 @@ func (m Model) View() string {
 	)
 }
 
+// renderNoteOverlay renders the add-note input as a centered modal
+func (m Model) renderNoteOverlay() string {
+	return appui.RenderInputModal(appui.InputModalConfig{
+		Title:       fmt.Sprintf("Add note to #%d", m.noteIssueID),
+		Body:        m.noteInput.View(),
+		Hint:        "Ctrl+S: Post   Esc: Cancel",
+		Width:       m.width,
+		Height:      m.height,
+		BorderColor: "#98C379",
+		TitleColor:  "#FFFFFF",
+		BoxWidth:    66,
+	})
+}
+
 // getFooterItems returns footer menu items with required status
 func (m Model) getFooterItems() []appui.FooterItem {
 	return []appui.FooterItem{
@@ -137,6 +158,7 @@ func (m Model) getFooterItems() []appui.FooterItem {
 		{Text: "m: My/All", Required: true},
 		{Text: "r: Reload", Required: true},
 		{Text: "e: Edit", Required: true},
+		{Text: "c: Note", Required: true},
 		{Text: "?: Help", Required: false},
 		{Text: "q: Quit", Required: true},
 	}

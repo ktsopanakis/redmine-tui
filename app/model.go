@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -65,11 +66,17 @@ type Model struct {
 	editOriginalValue   string            // original value before editing
 	pendingEdits        map[string]string // fieldName -> new value for all pending edits
 	originalValues      map[string]string // fieldName -> original value for comparison
+	editedFields        map[string]bool   // fieldName -> whether the user actually edited it this session
 
 	// Modal state
 	showModal   bool   // whether a modal is currently displayed
 	modalType   string // type of modal: "help", etc.
 	modalScroll int    // scroll position in modal content
+
+	// Note (comment) state
+	noteMode    bool           // whether the add-note input is active
+	noteInput   textarea.Model // multi-line input for the note
+	noteIssueID int            // ID of the issue the note will be added to
 
 	// Loading indicator
 	loadingIndicator ui.LoadingModel
@@ -84,8 +91,14 @@ func InitialModel() Model {
 
 	editInput := textinput.New()
 	editInput.Placeholder = "Enter value..."
-	editInput.CharLimit = 500
+	editInput.CharLimit = 0 // unlimited: never silently truncate a field's value
 	editInput.Width = 50
+
+	noteInput := textarea.New()
+	noteInput.Placeholder = "Write a note..."
+	noteInput.CharLimit = 5000
+	noteInput.SetWidth(58)
+	noteInput.SetHeight(5)
 
 	return Model{
 		leftTitle:        "Issues",
@@ -96,6 +109,7 @@ func InitialModel() Model {
 		loading:          true,
 		filterInput:      filterInput,
 		editInput:        editInput,
+		noteInput:        noteInput,
 		viewMode:         "my",
 		selectedUsers:    make(map[int]bool),
 		selectedProjects: make(map[int]bool),
@@ -220,6 +234,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.editMode = false
 		m.editInput.Blur()
+		m.noteMode = false
+		m.noteInput.Blur()
 		if msg.err == nil {
 			// Refresh the issue list and details
 			cmds = append(cmds, ui.SendLoadingCompleteMsg())
@@ -272,7 +288,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Check if we're in any input mode - if so, only handle esc, enter, and pass to input
-		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode
+		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode || m.noteMode
 
 		// Handle filter mode input FIRST - allow all keys to be typed
 		if m.filterMode {
@@ -325,6 +341,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Handle note mode input - all keys go to the textarea except Ctrl+S/Esc
+		if m.noteMode {
+			switch msg.String() {
+			case "esc":
+				// Cancel note without posting
+				m.noteMode = false
+				m.noteInput.Blur()
+				m.noteInput.Reset()
+				return m, nil
+			case "ctrl+s":
+				note := strings.TrimSpace(m.noteInput.Value())
+				m.noteMode = false
+				m.noteInput.Blur()
+				if note != "" {
+					issueID := m.noteIssueID
+					m.noteInput.Reset()
+					m.loading = true
+					return m, tea.Batch(
+						ui.SendLoadingMsg("Posting note..."),
+						addNote(m.client, issueID, note),
+					)
+				}
+				// Empty note - just close
+				m.noteInput.Reset()
+				return m, nil
+			default:
+				// Pass all other keys (including Enter for newlines) to the textarea
+				m.noteInput, cmd = m.noteInput.Update(msg)
+				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
+			}
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			if m.editMode && m.hasUnsavedChanges {
@@ -355,6 +404,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.hasUnsavedChanges = false
 				m.pendingEdits = make(map[string]string)
 				m.originalValues = make(map[string]string)
+				m.editedFields = make(map[string]bool)
 				m.editInput.Blur()
 				m.updatePaneContent()
 				return m, nil
@@ -372,10 +422,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Save current field to pending before submitting
 				if m.editFieldIndex < len(editableFields) {
 					field := editableFields[m.editFieldIndex]
-					currentValue := m.editInput.Value()
-					originalValue := m.originalValues[field.Name]
-					if currentValue != originalValue {
-						m.pendingEdits[field.Name] = currentValue
+					if m.editedFields[field.Name] {
+						m.pendingEdits[field.Name] = m.editInput.Value()
 					} else {
 						delete(m.pendingEdits, field.Name)
 					}
@@ -402,12 +450,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Save current field edit to pending edits before moving to next
 				if m.editFieldIndex < len(editableFields) {
 					field := editableFields[m.editFieldIndex]
-					currentValue := m.editInput.Value()
-					originalValue := m.originalValues[field.Name]
-					if currentValue != originalValue {
-						m.pendingEdits[field.Name] = currentValue
+					if m.editedFields[field.Name] {
+						m.pendingEdits[field.Name] = m.editInput.Value()
 					} else {
-						// Remove from pending if reverted to original
+						// Remove from pending if the field was not edited
 						delete(m.pendingEdits, field.Name)
 					}
 				}
@@ -577,6 +623,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						nextIndex := (currentIndex - 1 + len(options)) % len(options)
 						m.editInput.SetValue(options[nextIndex])
+						m.editedFields[field.Name] = true
 						m.hasUnsavedChanges = true
 						m.updatePaneContent()
 					}
@@ -639,6 +686,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						nextIndex := (currentIndex + 1) % len(options)
 						m.editInput.SetValue(options[nextIndex])
+						m.editedFields[field.Name] = true
 						m.hasUnsavedChanges = true
 						m.updatePaneContent()
 					}
@@ -710,6 +758,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editInput, cmd = m.editInput.Update(msg)
 				cmds = append(cmds, cmd)
 				m.hasUnsavedChanges = (m.editInput.Value() != m.editOriginalValue)
+				if m.editFieldIndex < len(editableFields) && m.editInput.Value() != m.editOriginalValue {
+					m.editedFields[editableFields[m.editFieldIndex].Name] = true
+				}
 				m.updatePaneContent()
 				return m, tea.Batch(cmds...)
 			} else if m.userInputMode == "user" && len(m.filteredIndices) > 0 && m.listCursor < len(m.filteredIndices) {
@@ -732,10 +783,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Save current field edit to pending edits before moving to next
 					if m.editFieldIndex < len(editableFields) {
 						field := editableFields[m.editFieldIndex]
-						currentValue := m.editInput.Value()
-						originalValue := m.originalValues[field.Name]
-						if currentValue != originalValue {
-							m.pendingEdits[field.Name] = currentValue
+						if m.editedFields[field.Name] {
+							m.pendingEdits[field.Name] = m.editInput.Value()
 						} else {
 							delete(m.pendingEdits, field.Name)
 						}
@@ -766,6 +815,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 				// Check if current field has changes
 				currentFieldChanged := (m.editInput.Value() != m.editOriginalValue)
+				if currentFieldChanged && m.editFieldIndex < len(editableFields) {
+					m.editedFields[editableFields[m.editFieldIndex].Name] = true
+				}
 				// Update hasUnsavedChanges based on pending edits + current field
 				m.hasUnsavedChanges = (len(m.pendingEdits) > 0 || currentFieldChanged)
 				// Update pane immediately to show changes
@@ -788,6 +840,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.editFieldIndex = 0
 						m.pendingEdits = make(map[string]string)
 						m.originalValues = make(map[string]string)
+						m.editedFields = make(map[string]bool)
 
 						// Store all original values
 						issue := filteredIssues[m.selectedIndex]
@@ -821,6 +874,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.updatePaneContent()
 						cmds = append(cmds, textinput.Blink)
 						return m, tea.Batch(cmds...)
+					}
+					return m, nil
+				case "c":
+					// Add a note/comment to the selected issue
+					filteredIssues := m.getFilteredIssues()
+					if len(filteredIssues) > 0 && m.selectedIndex < len(filteredIssues) {
+						m.noteMode = true
+						m.noteIssueID = filteredIssues[m.selectedIndex].ID
+						m.noteInput.Reset()
+						return m, m.noteInput.Focus()
 					}
 					return m, nil
 				case "f":
