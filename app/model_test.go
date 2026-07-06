@@ -156,6 +156,106 @@ func TestEditOnlyCommitsTouchedFields(t *testing.T) {
 	}
 }
 
+// TestMultilineDescriptionEditor verifies that the description is edited via the
+// dedicated multi-line editor and its newlines survive into the pending edit.
+func TestMultilineDescriptionEditor(t *testing.T) {
+	model := InitialModel()
+	model.loading = false
+	model.issues = []api.Issue{{ID: 7, Subject: "S", Description: "old", Priority: api.Priority{ID: 2, Name: "Normal"}}}
+	model.selectedIndex = 0
+
+	var m tea.Model = model
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	send := func(k tea.KeyMsg) { m, _ = m.Update(k) }
+
+	send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}) // edit mode (field 0)
+	send(tea.KeyMsg{Type: tea.KeyTab})                       // -> description (multiline)
+	send(tea.KeyMsg{Type: tea.KeyEnter})                     // open the editor
+
+	if !m.(Model).descEditMode {
+		t.Fatal("Enter on the description field should open the multi-line editor")
+	}
+
+	// Type a two-line description (Enter inserts a newline in the editor)
+	send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line one")})
+	send(tea.KeyMsg{Type: tea.KeyEnter})
+	send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line two")})
+	send(tea.KeyMsg{Type: tea.KeyCtrlS}) // apply
+
+	mm := m.(Model)
+	if mm.descEditMode {
+		t.Error("Ctrl+S should close the editor")
+	}
+	got := mm.pendingEdits["description"]
+	if !strings.Contains(got, "\n") {
+		t.Errorf("description pending edit lost its newline: %q", got)
+	}
+	if !strings.Contains(got, "line one") || !strings.Contains(got, "line two") {
+		t.Errorf("description pending edit = %q, want both lines", got)
+	}
+}
+
+// TestDescriptionKeepsNewlinesWhileEditing guards against the details pane
+// showing a newline-stripped description while the description field is selected
+// in edit mode (it must not read from the single-line input).
+func TestDescriptionKeepsNewlinesWhileEditing(t *testing.T) {
+	desc := "First line\nSecond line\nThird line"
+	model := InitialModel()
+	model.loading = false
+	model.issues = []api.Issue{{ID: 9, Subject: "S", Description: desc}}
+	model.selectedIndex = 0
+
+	var m tea.Model = model
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 50})
+	send := func(k tea.KeyMsg) { m, _ = m.Update(k) }
+
+	send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}) // edit mode
+	send(tea.KeyMsg{Type: tea.KeyTab})                       // -> description field
+
+	// With newlines preserved, the three fragments land on three different
+	// rendered lines. If the single-line input stripped them, they collapse
+	// onto one line.
+	lines := strings.Split(m.(Model).rightPane.View(), "\n")
+	lineOf := func(frag string) int {
+		for i, l := range lines {
+			if strings.Contains(l, frag) {
+				return i
+			}
+		}
+		return -1
+	}
+	first, second, third := lineOf("First line"), lineOf("Second line"), lineOf("Third line")
+	if first < 0 || second < 0 || third < 0 {
+		t.Fatalf("description fragments missing from details pane (%d,%d,%d)", first, second, third)
+	}
+	if first == second || second == third {
+		t.Errorf("description newlines were stripped: fragments share a rendered line (%d,%d,%d)", first, second, third)
+	}
+}
+
+// TestSaveClearsPendingEdits guards the "sticky field" bug: after a save,
+// pending edits must be cleared so they don't bleed onto other issues.
+func TestSaveClearsPendingEdits(t *testing.T) {
+	model := InitialModel()
+	model.pendingEdits = map[string]string{"priority_id": "High"}
+	model.originalValues = map[string]string{"priority_id": "Normal"}
+	model.editedFields = map[string]bool{"priority_id": true}
+	model.editMode = true
+
+	updated, _ := model.Update(issueUpdatedMsg{issueID: 1, err: nil})
+	mm := updated.(Model)
+
+	if len(mm.pendingEdits) != 0 {
+		t.Errorf("pendingEdits should be cleared after save, got %v", mm.pendingEdits)
+	}
+	if len(mm.editedFields) != 0 {
+		t.Errorf("editedFields should be cleared after save, got %v", mm.editedFields)
+	}
+	if mm.editMode {
+		t.Error("editMode should be false after save")
+	}
+}
+
 func TestScrollBounds(t *testing.T) {
 	model := InitialModel()
 	model.issues = []api.Issue{

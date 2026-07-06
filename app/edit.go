@@ -243,6 +243,8 @@ func (m Model) renderEditFooter() string {
 		footer += lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(
 			fmt.Sprintf("[%d options]", len(options)),
 		)
+	} else if field.Type == "multiline" {
+		footer += lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("[press Enter to open the editor]")
 	} else {
 		footer += m.editInput.View()
 	}

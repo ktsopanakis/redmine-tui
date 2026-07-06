@@ -89,6 +89,11 @@ func (m Model) View() string {
 		panes = appui.OverlayOnContent(panes, m.renderNoteOverlay())
 	}
 
+	// If the description editor is open, overlay it on top
+	if m.descEditMode {
+		panes = appui.OverlayOnContent(panes, m.renderDescEditor())
+	}
+
 	// If modal is active, overlay the modal on top
 	if m.showModal {
 		var modal string
@@ -115,6 +120,8 @@ func (m Model) View() string {
 		footer = appui.RenderPromptFooter("Filter: ", m.filterInput.View(), m.width, "#61AFEF")
 	} else if m.noteMode {
 		footer = appui.RenderFooter("Ctrl+S: Post note  |  Esc: Cancel", m.width)
+	} else if m.descEditMode {
+		footer = appui.RenderFooter("Ctrl+S: Save description  |  Esc: Cancel", m.width)
 	} else if m.editMode {
 		footer = appui.RenderFooter(m.renderEditFooter(), m.width)
 	} else if m.userInputMode == "user" {
@@ -144,6 +151,24 @@ func (m Model) renderNoteOverlay() string {
 		Width:       m.width,
 		Height:      m.height,
 		BorderColor: "#98C379",
+		TitleColor:  "#FFFFFF",
+		BoxWidth:    66,
+	})
+}
+
+// renderDescEditor renders the multi-line description editor as a centered modal
+func (m Model) renderDescEditor() string {
+	title := "Edit Description"
+	if m.editFieldIndex < len(editableFields) {
+		title = "Edit " + editableFields[m.editFieldIndex].DisplayName
+	}
+	return appui.RenderInputModal(appui.InputModalConfig{
+		Title:       title,
+		Body:        m.descInput.View(),
+		Hint:        "Ctrl+S: Save   Esc: Cancel   (Enter inserts a new line)",
+		Width:       m.width,
+		Height:      m.height,
+		BorderColor: "#61AFEF",
 		TitleColor:  "#FFFFFF",
 		BoxWidth:    66,
 	})

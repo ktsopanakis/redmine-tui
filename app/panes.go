@@ -361,12 +361,22 @@ func (m *Model) updatePaneContent() {
 		currentField := ""
 		editedValue := ""
 		if m.editMode && m.editFieldIndex < len(editableFields) {
-			currentField = editableFields[m.editFieldIndex].Name
-			editedValue = m.editInput.Value()
+			f := editableFields[m.editFieldIndex]
+			currentField = f.Name
+			// Multi-line fields are edited in the dedicated editor, not the
+			// single-line input (which strips newlines) - so don't read from it.
+			if f.Type != "multiline" {
+				editedValue = m.editInput.Value()
+			}
 		}
 
 		// Helper function to get display value (edited or original)
 		getDisplayValue := func(fieldName string, originalValue string) string {
+			// Only overlay pending/edited values while actively editing; otherwise
+			// stale pending values would bleed onto other issues after a save.
+			if !m.editMode {
+				return originalValue
+			}
 			// Check pending edits first
 			if pendingValue, exists := m.pendingEdits[fieldName]; exists {
 				return pendingValue

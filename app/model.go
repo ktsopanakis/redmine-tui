@@ -78,6 +78,10 @@ type Model struct {
 	noteInput   textarea.Model // multi-line input for the note
 	noteIssueID int            // ID of the issue the note will be added to
 
+	// Multi-line description editor state
+	descEditMode bool           // whether the multi-line description editor is open
+	descInput    textarea.Model // multi-line input for editing a description
+
 	// Loading indicator
 	loadingIndicator ui.LoadingModel
 }
@@ -100,6 +104,12 @@ func InitialModel() Model {
 	noteInput.SetWidth(58)
 	noteInput.SetHeight(5)
 
+	descInput := textarea.New()
+	descInput.Placeholder = "Edit description..."
+	descInput.CharLimit = 0 // unlimited
+	descInput.SetWidth(58)
+	descInput.SetHeight(10)
+
 	return Model{
 		leftTitle:        "Issues",
 		rightTitle:       "Details",
@@ -110,6 +120,7 @@ func InitialModel() Model {
 		filterInput:      filterInput,
 		editInput:        editInput,
 		noteInput:        noteInput,
+		descInput:        descInput,
 		viewMode:         "my",
 		selectedUsers:    make(map[int]bool),
 		selectedProjects: make(map[int]bool),
@@ -236,6 +247,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editInput.Blur()
 		m.noteMode = false
 		m.noteInput.Blur()
+		// Clear edit session state so saved values don't "stick" onto other
+		// issues (pendingEdits is keyed by field name, not by issue).
+		m.pendingEdits = make(map[string]string)
+		m.originalValues = make(map[string]string)
+		m.editedFields = make(map[string]bool)
+		m.hasUnsavedChanges = false
 		if msg.err == nil {
 			// Refresh the issue list and details
 			cmds = append(cmds, ui.SendLoadingCompleteMsg())
@@ -288,7 +305,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Check if we're in any input mode - if so, only handle esc, enter, and pass to input
-		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode || m.noteMode
+		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode || m.noteMode || m.descEditMode
 
 		// Handle filter mode input FIRST - allow all keys to be typed
 		if m.filterMode {
@@ -374,6 +391,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Handle the multi-line description editor - keys go to the textarea
+		// except Ctrl+S (apply into pending edits) and Esc (cancel).
+		if m.descEditMode {
+			switch msg.String() {
+			case "esc":
+				// Discard edits made in the editor, stay in edit mode
+				m.descEditMode = false
+				m.descInput.Blur()
+				return m, nil
+			case "ctrl+s":
+				if m.editFieldIndex < len(editableFields) {
+					field := editableFields[m.editFieldIndex]
+					m.pendingEdits[field.Name] = m.descInput.Value()
+					m.editedFields[field.Name] = true
+					m.hasUnsavedChanges = true
+				}
+				m.descEditMode = false
+				m.descInput.Blur()
+				m.updatePaneContent()
+				return m, nil
+			default:
+				// Pass all other keys (including Enter for newlines) to the textarea
+				m.descInput, cmd = m.descInput.Update(msg)
+				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
+			}
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			if m.editMode && m.hasUnsavedChanges {
@@ -422,10 +467,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Save current field to pending before submitting
 				if m.editFieldIndex < len(editableFields) {
 					field := editableFields[m.editFieldIndex]
-					if m.editedFields[field.Name] {
-						m.pendingEdits[field.Name] = m.editInput.Value()
-					} else {
-						delete(m.pendingEdits, field.Name)
+					if field.Type != "multiline" {
+						if m.editedFields[field.Name] {
+							m.pendingEdits[field.Name] = m.editInput.Value()
+						} else {
+							delete(m.pendingEdits, field.Name)
+						}
 					}
 				}
 
@@ -447,12 +494,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			if m.editMode {
+				// Multi-line fields open a dedicated editor rather than cycling
+				if m.editFieldIndex < len(editableFields) && editableFields[m.editFieldIndex].Type == "multiline" {
+					field := editableFields[m.editFieldIndex]
+					val := m.originalValues[field.Name]
+					if pending, exists := m.pendingEdits[field.Name]; exists {
+						val = pending
+					}
+					m.descInput.SetValue(val)
+					m.descEditMode = true
+					return m, m.descInput.Focus()
+				}
+
 				// Save current field edit to pending edits before moving to next
 				if m.editFieldIndex < len(editableFields) {
 					field := editableFields[m.editFieldIndex]
-					if m.editedFields[field.Name] {
+					if m.editedFields[field.Name] && field.Type != "multiline" {
 						m.pendingEdits[field.Name] = m.editInput.Value()
-					} else {
+					} else if field.Type != "multiline" {
 						// Remove from pending if the field was not edited
 						delete(m.pendingEdits, field.Name)
 					}
@@ -783,10 +842,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Save current field edit to pending edits before moving to next
 					if m.editFieldIndex < len(editableFields) {
 						field := editableFields[m.editFieldIndex]
-						if m.editedFields[field.Name] {
-							m.pendingEdits[field.Name] = m.editInput.Value()
-						} else {
-							delete(m.pendingEdits, field.Name)
+						if field.Type != "multiline" {
+							if m.editedFields[field.Name] {
+								m.pendingEdits[field.Name] = m.editInput.Value()
+							} else {
+								delete(m.pendingEdits, field.Name)
+							}
 						}
 					}
 
@@ -809,6 +870,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.editInput.Focus()
 					m.updatePaneContent()
 					return m, nil
+				}
+				// Multi-line fields are edited via the dedicated editor
+				// (press Enter to open it), so ignore inline typing here.
+				if m.editFieldIndex < len(editableFields) && editableFields[m.editFieldIndex].Type == "multiline" {
+					return m, tea.Batch(cmds...)
 				}
 				// Pass other keys to edit input and update pane in real-time
 				m.editInput, cmd = m.editInput.Update(msg)
