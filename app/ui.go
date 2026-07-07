@@ -99,6 +99,11 @@ func (m Model) View() string {
 		panes = appui.OverlayOnContent(panes, m.renderStatusPicker())
 	}
 
+	// If the quick-actions popup is open, overlay it on top
+	if m.quickMode {
+		panes = appui.OverlayOnContent(panes, m.renderQuickActions())
+	}
+
 	// If modal is active, overlay the modal on top
 	if m.showModal {
 		var modal string
@@ -129,6 +134,8 @@ func (m Model) View() string {
 		footer = appui.RenderFooter("Ctrl+S: Save description  |  Esc: Cancel", m.width)
 	} else if m.statusPickMode {
 		footer = appui.RenderFooter("↑↓/1-9: Select  |  Enter: Apply  |  Esc: Cancel", m.width)
+	} else if m.quickMode {
+		footer = appui.RenderFooter("Tab: Next field  |  Ctrl+S: Apply all  |  Esc: Cancel", m.width)
 	} else if m.editMode {
 		footer = appui.RenderFooter(m.renderEditFooter(), m.width)
 	} else if m.userInputMode == "user" {
@@ -158,6 +165,70 @@ func (m Model) renderNoteOverlay() string {
 		Width:       m.width,
 		Height:      m.height,
 		BorderColor: "#98C379",
+		TitleColor:  "#FFFFFF",
+		BoxWidth:    66,
+	})
+}
+
+// renderQuickActions renders the combined status/assignee/note popup
+func (m Model) renderQuickActions() string {
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF")).Bold(true)
+	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")).Bold(true)
+	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+
+	// Status row
+	statusName := "(none)"
+	if len(m.availableStatuses) > 0 && m.quickStatusIdx < len(m.availableStatuses) {
+		statusName = m.availableStatuses[m.quickStatusIdx].Name
+	}
+	statusVal := "‹ " + statusName + " ›"
+	if m.quickField == 0 {
+		statusVal = activeStyle.Render(statusVal)
+	} else {
+		statusVal = valueStyle.Render(statusVal)
+	}
+	statusLine := labelStyle.Render("Status:   ") + statusVal
+
+	// Assignee row (type-to-filter)
+	opts := m.quickFilteredAssignees()
+	selName := "(no match)"
+	if len(opts) > 0 && m.quickAssigneeSel < len(opts) {
+		selName = opts[m.quickAssigneeSel].Name
+	}
+	filterPart := m.quickAssigneeFilter
+	if m.quickField == 1 {
+		filterPart += "▌"
+	}
+	var assigneeVal string
+	if filterPart != "" {
+		assigneeVal = filterPart + "  → " + selName
+	} else {
+		assigneeVal = selName
+	}
+	if m.quickField == 1 {
+		assigneeVal = activeStyle.Render(assigneeVal)
+	} else {
+		assigneeVal = valueStyle.Render(assigneeVal)
+	}
+	assigneeLine := labelStyle.Render("Assignee: ") + assigneeVal
+
+	// Note row
+	noteLabel := "Note:"
+	if m.quickField == 2 {
+		noteLabel = activeStyle.Render(noteLabel)
+	} else {
+		noteLabel = labelStyle.Render(noteLabel)
+	}
+
+	body := statusLine + "\n" + assigneeLine + "\n\n" + noteLabel + "\n" + m.quickNote.View()
+
+	return appui.RenderInputModal(appui.InputModalConfig{
+		Title:       fmt.Sprintf("Quick actions · #%d", m.quickIssueID),
+		Body:        body,
+		Hint:        "Tab: next field   ←/→: change   type: filter assignee   Ctrl+S: apply   Esc: cancel",
+		Width:       m.width,
+		Height:      m.height,
+		BorderColor: "#C678DD",
 		TitleColor:  "#FFFFFF",
 		BoxWidth:    66,
 	})
@@ -225,6 +296,7 @@ func (m Model) getFooterItems() []appui.FooterItem {
 		{Text: "f: Filter", Required: true},
 		{Text: "m: My/All", Required: true},
 		{Text: "r: Reload", Required: true},
+		{Text: "a: Actions", Required: true},
 		{Text: "e: Edit", Required: true},
 		{Text: "s: Status", Required: true},
 		{Text: "c: Note", Required: true},

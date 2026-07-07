@@ -149,6 +149,27 @@ func updateIssueStatus(client *api.Client, issueID, statusID int) tea.Cmd {
 	}
 }
 
+// updateIssueFields applies an arbitrary set of field updates in one request
+// (used by the quick-actions popup to change status/assignee/note together).
+func updateIssueFields(client *api.Client, issueID int, updates map[string]interface{}) tea.Cmd {
+	return func() tea.Msg {
+		err := client.UpdateIssue(issueID, updates)
+		return issueUpdatedMsg{issueID: issueID, err: err}
+	}
+}
+
+// userDisplayName builds a human-readable name for a user, preferring the
+// server-provided Name, then "First Last", then the login.
+func userDisplayName(u api.User) string {
+	if u.Name != "" {
+		return u.Name
+	}
+	if n := strings.TrimSpace(u.Firstname + " " + u.Lastname); n != "" {
+		return n
+	}
+	return u.Login
+}
+
 // updateIssueMultiple sends all pending edits to the API in one request
 func updateIssueMultiple(client *api.Client, issueID int, pendingEdits map[string]string, m Model) tea.Cmd {
 	return func() tea.Msg {

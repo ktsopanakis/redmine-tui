@@ -88,6 +88,17 @@ type Model struct {
 	statusPickIssueID   int  // ID of the issue whose status is being changed
 	statusPickCurrentID int  // the issue's current status ID (for the "current" marker)
 
+	// Quick-actions popup state (status + assignee + note in one dialog)
+	quickMode           bool           // whether the quick-actions popup is open
+	quickIssueID        int            // ID of the issue being acted on
+	quickField          int            // focused field: 0=status, 1=assignee, 2=note
+	quickStatusIdx      int            // selected index into availableStatuses
+	quickOrigStatusID   int            // status ID when the popup opened
+	quickAssigneeFilter string         // type-to-filter text for the assignee
+	quickAssigneeSel    int            // selected index into the filtered assignee list
+	quickOrigAssigneeID int            // assignee ID when the popup opened (0 = unassigned)
+	quickNote           textarea.Model // multi-line note input
+
 	// Loading indicator
 	loadingIndicator ui.LoadingModel
 }
@@ -116,6 +127,12 @@ func InitialModel() Model {
 	descInput.SetWidth(58)
 	descInput.SetHeight(10)
 
+	quickNote := textarea.New()
+	quickNote.Placeholder = "Optional note..."
+	quickNote.CharLimit = 5000
+	quickNote.SetWidth(58)
+	quickNote.SetHeight(4)
+
 	return Model{
 		leftTitle:        "Issues",
 		rightTitle:       "Details",
@@ -127,6 +144,7 @@ func InitialModel() Model {
 		editInput:        editInput,
 		noteInput:        noteInput,
 		descInput:        descInput,
+		quickNote:        quickNote,
 		viewMode:         "my",
 		selectedUsers:    make(map[int]bool),
 		selectedProjects: make(map[int]bool),
@@ -311,7 +329,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Check if we're in any input mode - if so, only handle esc, enter, and pass to input
-		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode || m.noteMode || m.descEditMode || m.statusPickMode
+		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode || m.noteMode || m.descEditMode || m.statusPickMode || m.quickMode
 
 		// Handle filter mode input FIRST - allow all keys to be typed
 		if m.filterMode {
@@ -459,6 +477,104 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					ui.SendLoadingMsg("Updating status..."),
 					updateIssueStatus(m.client, issueID, status.ID),
 				)
+			}
+			return m, nil
+		}
+
+		// Handle the quick-actions popup: Tab moves between status/assignee/note,
+		// Ctrl+S applies all changes at once, Esc cancels.
+		if m.quickMode {
+			switch msg.String() {
+			case "esc":
+				m.quickMode = false
+				m.quickNote.Blur()
+				return m, nil
+			case "ctrl+s":
+				updates := make(map[string]interface{})
+				if len(m.availableStatuses) > 0 && m.quickStatusIdx < len(m.availableStatuses) {
+					if st := m.availableStatuses[m.quickStatusIdx]; st.ID != m.quickOrigStatusID {
+						updates["status_id"] = st.ID
+					}
+				}
+				opts := m.quickFilteredAssignees()
+				if len(opts) > 0 && m.quickAssigneeSel < len(opts) {
+					if sel := opts[m.quickAssigneeSel]; sel.ID != m.quickOrigAssigneeID {
+						if sel.ID == 0 {
+							updates["assigned_to_id"] = nil
+						} else {
+							updates["assigned_to_id"] = sel.ID
+						}
+					}
+				}
+				if note := strings.TrimSpace(m.quickNote.Value()); note != "" {
+					updates["notes"] = note
+				}
+				issueID := m.quickIssueID
+				m.quickMode = false
+				m.quickNote.Blur()
+				if len(updates) == 0 {
+					return m, nil
+				}
+				m.loading = true
+				return m, tea.Batch(
+					ui.SendLoadingMsg("Applying changes..."),
+					updateIssueFields(m.client, issueID, updates),
+				)
+			case "tab":
+				m.quickField = (m.quickField + 1) % 3
+				if m.quickField == 2 {
+					return m, m.quickNote.Focus()
+				}
+				m.quickNote.Blur()
+				return m, nil
+			case "shift+tab":
+				m.quickField = (m.quickField + 2) % 3
+				if m.quickField == 2 {
+					return m, m.quickNote.Focus()
+				}
+				m.quickNote.Blur()
+				return m, nil
+			}
+
+			switch m.quickField {
+			case 0: // status - cycle through the list
+				switch msg.String() {
+				case "left", "h", "up", "k":
+					if n := len(m.availableStatuses); n > 0 {
+						m.quickStatusIdx = (m.quickStatusIdx - 1 + n) % n
+					}
+				case "right", "l", "down", "j":
+					if n := len(m.availableStatuses); n > 0 {
+						m.quickStatusIdx = (m.quickStatusIdx + 1) % n
+					}
+				}
+				return m, nil
+			case 1: // assignee - type to filter, arrows to step through matches
+				switch msg.String() {
+				case "left", "up":
+					if m.quickAssigneeSel > 0 {
+						m.quickAssigneeSel--
+					}
+				case "right", "down":
+					if m.quickAssigneeSel < len(m.quickFilteredAssignees())-1 {
+						m.quickAssigneeSel++
+					}
+				case "backspace":
+					if r := []rune(m.quickAssigneeFilter); len(r) > 0 {
+						m.quickAssigneeFilter = string(r[:len(r)-1])
+						m.quickAssigneeSel = 0
+					}
+				default:
+					if len(msg.Runes) > 0 {
+						m.quickAssigneeFilter += string(msg.Runes)
+						m.quickAssigneeSel = 0
+					}
+				}
+				return m, nil
+			case 2: // note - free-form multi-line text
+				m.quickNote, cmd = m.quickNote.Update(msg)
+				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
 			}
 			return m, nil
 		}
@@ -994,6 +1110,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.noteIssueID = filteredIssues[m.selectedIndex].ID
 						m.noteInput.Reset()
 						return m, m.noteInput.Focus()
+					}
+					return m, nil
+				case "a":
+					// Quick-actions popup: status + assignee + note in one dialog
+					filteredIssues := m.getFilteredIssues()
+					if len(filteredIssues) > 0 && m.selectedIndex < len(filteredIssues) {
+						issue := filteredIssues[m.selectedIndex]
+						m.quickIssueID = issue.ID
+						m.quickField = 0
+						// Status: preselect current
+						m.quickOrigStatusID = issue.Status.ID
+						m.quickStatusIdx = 0
+						for i, st := range m.availableStatuses {
+							if st.ID == issue.Status.ID {
+								m.quickStatusIdx = i
+								break
+							}
+						}
+						// Assignee: preselect current
+						m.quickAssigneeFilter = ""
+						m.quickOrigAssigneeID = 0
+						if issue.AssignedTo != nil {
+							m.quickOrigAssigneeID = issue.AssignedTo.ID
+						}
+						m.quickAssigneeSel = 0
+						for i, o := range m.quickFilteredAssignees() {
+							if o.ID == m.quickOrigAssigneeID {
+								m.quickAssigneeSel = i
+								break
+							}
+						}
+						// Note: start empty
+						m.quickNote.Reset()
+						m.quickNote.Blur()
+						m.quickMode = true
+
+						var cmds []tea.Cmd
+						if len(m.availableStatuses) == 0 {
+							cmds = append(cmds, ui.SendLoadingMsg("Fetching statuses..."), fetchStatuses(m.client))
+						}
+						if len(m.availableUsers) == 0 {
+							cmds = append(cmds, ui.SendLoadingMsg("Fetching users..."), fetchUsers(m.client))
+						}
+						return m, tea.Batch(cmds...)
 					}
 					return m, nil
 				case "s":

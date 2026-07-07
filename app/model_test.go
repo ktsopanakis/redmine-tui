@@ -278,6 +278,71 @@ func TestStatusPicker(t *testing.T) {
 	_ = cmd2
 }
 
+// TestQuickActionsPopup verifies the combined status/assignee/note popup:
+// preselection, that no-change applies nothing, and that changing fields
+// (incl. type-to-filter assignee) issues an update.
+func TestQuickActionsPopup(t *testing.T) {
+	model := InitialModel()
+	model.loading = false
+	model.availableStatuses = []api.Status{{ID: 1, Name: "New"}, {ID: 2, Name: "In Progress"}, {ID: 3, Name: "Resolved"}}
+	model.availableUsers = []api.User{{ID: 10, Name: "Alice"}, {ID: 11, Name: "Bob"}}
+	model.issues = []api.Issue{{
+		ID:         8,
+		Subject:    "S",
+		Status:     api.Status{ID: 2, Name: "In Progress"},
+		AssignedTo: &api.User{ID: 10, Name: "Alice"},
+	}}
+	model.selectedIndex = 0
+
+	var m tea.Model = model
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	send := func(k tea.KeyMsg) { m, _ = m.Update(k) }
+	runes := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+
+	// Open and check preselection
+	send(runes("a"))
+	mm := m.(Model)
+	if !mm.quickMode {
+		t.Fatal("'a' should open the quick-actions popup")
+	}
+	if mm.quickStatusIdx != 1 {
+		t.Errorf("status preselect = %d, want 1 (In Progress)", mm.quickStatusIdx)
+	}
+	if mm.quickAssigneeSel != 1 { // opts: [Unassigned, Alice, Bob] -> Alice
+		t.Errorf("assignee preselect = %d, want 1 (Alice)", mm.quickAssigneeSel)
+	}
+
+	// No changes -> Ctrl+S closes with no command
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if updated.(Model).quickMode {
+		t.Error("Ctrl+S should close the popup")
+	}
+	if cmd != nil {
+		t.Error("Ctrl+S with no changes should not issue a command")
+	}
+
+	// Reopen, change status, filter assignee to Bob, apply -> command issued
+	send(runes("a"))
+	send(tea.KeyMsg{Type: tea.KeyRight}) // status -> Resolved
+	send(tea.KeyMsg{Type: tea.KeyTab})   // move to assignee
+	send(runes("b"))
+	send(runes("o"))
+	mm = m.(Model)
+	if mm.quickField != 1 {
+		t.Fatalf("should be on assignee field, got %d", mm.quickField)
+	}
+	if opts := mm.quickFilteredAssignees(); len(opts) != 1 || opts[0].Name != "Bob" {
+		t.Fatalf("assignee filter 'bo' should match only Bob, got %v", opts)
+	}
+	updated2, cmd2 := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if updated2.(Model).quickMode {
+		t.Error("Ctrl+S should close the popup after changes")
+	}
+	if cmd2 == nil {
+		t.Error("Ctrl+S with changes should issue an update command")
+	}
+}
+
 // TestSaveClearsPendingEdits guards the "sticky field" bug: after a save,
 // pending edits must be cleared so they don't bleed onto other issues.
 func TestSaveClearsPendingEdits(t *testing.T) {

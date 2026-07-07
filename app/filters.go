@@ -7,6 +7,34 @@ import (
 	"github.com/ktsopanakis/redmine-tui/api"
 )
 
+// assigneeOption is a selectable assignee in the quick-actions popup.
+// ID 0 represents "Unassigned".
+type assigneeOption struct {
+	ID   int
+	Name string
+}
+
+// quickFilteredAssignees returns the assignee choices for the quick-actions
+// popup ("Unassigned" plus all available users), narrowed by the current
+// type-to-filter text.
+func (m *Model) quickFilteredAssignees() []assigneeOption {
+	opts := []assigneeOption{{ID: 0, Name: "Unassigned"}}
+	for _, u := range m.availableUsers {
+		opts = append(opts, assigneeOption{ID: u.ID, Name: userDisplayName(u)})
+	}
+	if m.quickAssigneeFilter == "" {
+		return opts
+	}
+	f := strings.ToLower(m.quickAssigneeFilter)
+	var out []assigneeOption
+	for _, o := range opts {
+		if strings.Contains(strings.ToLower(o.Name), f) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
 // getFilteredIssues returns issues filtered by current filters
 func (m *Model) getFilteredIssues() []api.Issue {
 	// First apply multi-user and/or multi-project filters if set

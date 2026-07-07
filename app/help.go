@@ -21,6 +21,7 @@ func (m Model) getHelpContent() []string {
 		"  p              - Select projects to filter by",
 		"",
 		"Issue Management:",
+		"  a              - Quick actions popup (status + assignee + note)",
 		"  s              - Quick-change the status of the selected issue",
 		"  c              - Add a note/comment to the selected issue",
 		"  e              - Enter edit mode (modify issue fields)",
