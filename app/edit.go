@@ -140,6 +140,15 @@ func addNote(client *api.Client, issueID int, note string) tea.Cmd {
 	}
 }
 
+// updateIssueStatus changes just the status of an issue (used by the quick
+// status picker).
+func updateIssueStatus(client *api.Client, issueID, statusID int) tea.Cmd {
+	return func() tea.Msg {
+		err := client.UpdateIssue(issueID, map[string]interface{}{"status_id": statusID})
+		return issueUpdatedMsg{issueID: issueID, err: err}
+	}
+}
+
 // updateIssueMultiple sends all pending edits to the API in one request
 func updateIssueMultiple(client *api.Client, issueID int, pendingEdits map[string]string, m Model) tea.Cmd {
 	return func() tea.Msg {

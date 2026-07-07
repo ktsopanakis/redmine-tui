@@ -82,6 +82,12 @@ type Model struct {
 	descEditMode bool           // whether the multi-line description editor is open
 	descInput    textarea.Model // multi-line input for editing a description
 
+	// Quick status-picker state
+	statusPickMode      bool // whether the quick status picker is open
+	statusPickCursor    int  // cursor position in the status list
+	statusPickIssueID   int  // ID of the issue whose status is being changed
+	statusPickCurrentID int  // the issue's current status ID (for the "current" marker)
+
 	// Loading indicator
 	loadingIndicator ui.LoadingModel
 }
@@ -305,7 +311,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Check if we're in any input mode - if so, only handle esc, enter, and pass to input
-		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode || m.noteMode || m.descEditMode
+		inInputMode := m.filterMode || m.userInputMode != "" || m.editMode || m.noteMode || m.descEditMode || m.statusPickMode
 
 		// Handle filter mode input FIRST - allow all keys to be typed
 		if m.filterMode {
@@ -417,6 +423,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 				return m, tea.Batch(cmds...)
 			}
+		}
+
+		// Handle the quick status picker: navigate with arrows, apply with Enter
+		// or a number key, cancel with Esc.
+		if m.statusPickMode {
+			switch msg.String() {
+			case "esc":
+				m.statusPickMode = false
+				return m, nil
+			case "up", "k":
+				if m.statusPickCursor > 0 {
+					m.statusPickCursor--
+				}
+				return m, nil
+			case "down", "j":
+				if m.statusPickCursor < len(m.availableStatuses)-1 {
+					m.statusPickCursor++
+				}
+				return m, nil
+			}
+			// Enter applies the cursor; digits 1-9 apply that status directly.
+			applyIdx := -1
+			if msg.String() == "enter" {
+				applyIdx = m.statusPickCursor
+			} else if s := msg.String(); len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+				applyIdx = int(s[0] - '1')
+			}
+			if applyIdx >= 0 && applyIdx < len(m.availableStatuses) {
+				status := m.availableStatuses[applyIdx]
+				issueID := m.statusPickIssueID
+				m.statusPickMode = false
+				m.loading = true
+				return m, tea.Batch(
+					ui.SendLoadingMsg("Updating status..."),
+					updateIssueStatus(m.client, issueID, status.ID),
+				)
+			}
+			return m, nil
 		}
 
 		switch msg.String() {
@@ -950,6 +994,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.noteIssueID = filteredIssues[m.selectedIndex].ID
 						m.noteInput.Reset()
 						return m, m.noteInput.Focus()
+					}
+					return m, nil
+				case "s":
+					// Quick status picker for the selected issue
+					filteredIssues := m.getFilteredIssues()
+					if len(filteredIssues) > 0 && m.selectedIndex < len(filteredIssues) {
+						issue := filteredIssues[m.selectedIndex]
+						m.statusPickIssueID = issue.ID
+						m.statusPickCurrentID = issue.Status.ID
+						// Pre-highlight the current status
+						m.statusPickCursor = 0
+						for i, st := range m.availableStatuses {
+							if st.ID == issue.Status.ID {
+								m.statusPickCursor = i
+								break
+							}
+						}
+						m.statusPickMode = true
+						if len(m.availableStatuses) == 0 {
+							return m, tea.Batch(
+								ui.SendLoadingMsg("Fetching statuses..."),
+								fetchStatuses(m.client),
+							)
+						}
 					}
 					return m, nil
 				case "f":

@@ -94,6 +94,11 @@ func (m Model) View() string {
 		panes = appui.OverlayOnContent(panes, m.renderDescEditor())
 	}
 
+	// If the quick status picker is open, overlay it on top
+	if m.statusPickMode {
+		panes = appui.OverlayOnContent(panes, m.renderStatusPicker())
+	}
+
 	// If modal is active, overlay the modal on top
 	if m.showModal {
 		var modal string
@@ -122,6 +127,8 @@ func (m Model) View() string {
 		footer = appui.RenderFooter("Ctrl+S: Post note  |  Esc: Cancel", m.width)
 	} else if m.descEditMode {
 		footer = appui.RenderFooter("Ctrl+S: Save description  |  Esc: Cancel", m.width)
+	} else if m.statusPickMode {
+		footer = appui.RenderFooter("↑↓/1-9: Select  |  Enter: Apply  |  Esc: Cancel", m.width)
 	} else if m.editMode {
 		footer = appui.RenderFooter(m.renderEditFooter(), m.width)
 	} else if m.userInputMode == "user" {
@@ -156,6 +163,42 @@ func (m Model) renderNoteOverlay() string {
 	})
 }
 
+// renderStatusPicker renders the quick status picker as a centered modal
+func (m Model) renderStatusPicker() string {
+	var lines []string
+	if len(m.availableStatuses) == 0 {
+		lines = append(lines, "Loading statuses...")
+	}
+	cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")).Bold(true)
+	currentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379"))
+	for i, st := range m.availableStatuses {
+		prefix := "  "
+		if i == m.statusPickCursor {
+			prefix = "→ "
+		}
+		num := "  "
+		if i < 9 {
+			num = fmt.Sprintf("%d ", i+1)
+		}
+		line := prefix + num + st.Name
+		if st.ID == m.statusPickCurrentID {
+			line += currentStyle.Render("  (current)")
+		}
+		if i == m.statusPickCursor {
+			line = cursorStyle.Render(line)
+		}
+		lines = append(lines, line)
+	}
+	return appui.RenderModal(appui.ModalConfig{
+		Title:       fmt.Sprintf("Status for #%d", m.statusPickIssueID),
+		Content:     lines,
+		Width:       m.width,
+		Height:      m.height,
+		BorderColor: "#FFD700",
+		TitleColor:  "#FFFFFF",
+	})
+}
+
 // renderDescEditor renders the multi-line description editor as a centered modal
 func (m Model) renderDescEditor() string {
 	title := "Edit Description"
@@ -183,6 +226,7 @@ func (m Model) getFooterItems() []appui.FooterItem {
 		{Text: "m: My/All", Required: true},
 		{Text: "r: Reload", Required: true},
 		{Text: "e: Edit", Required: true},
+		{Text: "s: Status", Required: true},
 		{Text: "c: Note", Required: true},
 		{Text: "?: Help", Required: false},
 		{Text: "q: Quit", Required: true},

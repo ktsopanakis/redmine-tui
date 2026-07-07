@@ -233,6 +233,51 @@ func TestDescriptionKeepsNewlinesWhileEditing(t *testing.T) {
 	}
 }
 
+// TestStatusPicker verifies 's' opens the picker with the current status
+// pre-selected, and that a number key applies the chosen status.
+func TestStatusPicker(t *testing.T) {
+	model := InitialModel()
+	model.loading = false
+	model.availableStatuses = []api.Status{{ID: 1, Name: "New"}, {ID: 2, Name: "In Progress"}, {ID: 3, Name: "Resolved"}}
+	model.issues = []api.Issue{{ID: 5, Subject: "S", Status: api.Status{ID: 2, Name: "In Progress"}}}
+	model.selectedIndex = 0
+
+	var m tea.Model = model
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Open the picker
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	mm := m.(Model)
+	if !mm.statusPickMode {
+		t.Fatal("pressing 's' should open the status picker")
+	}
+	if mm.statusPickCursor != 1 {
+		t.Errorf("cursor should pre-select current status (index 1), got %d", mm.statusPickCursor)
+	}
+	if mm.statusPickCurrentID != 2 {
+		t.Errorf("statusPickCurrentID = %d, want 2", mm.statusPickCurrentID)
+	}
+
+	// Press "3" to apply "Resolved" -> should close the picker and issue a command
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	mm = updated.(Model)
+	if mm.statusPickMode {
+		t.Error("applying a status should close the picker")
+	}
+	if cmd == nil {
+		t.Error("applying a status should issue an update command")
+	}
+
+	// Esc should cancel without a command
+	m2, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m2, cmd2 := m2.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m2.(Model).statusPickMode {
+		t.Error("Esc should close the picker")
+	}
+	_ = cmd2
+}
+
 // TestSaveClearsPendingEdits guards the "sticky field" bug: after a save,
 // pending edits must be cleared so they don't bleed onto other issues.
 func TestSaveClearsPendingEdits(t *testing.T) {
